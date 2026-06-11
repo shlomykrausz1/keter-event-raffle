@@ -50,9 +50,15 @@ function emptyDb(): DBState {
 }
 
 function loadSync(): DBState {
-  if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
-  if (!existsSync(STORE_FILE)) return emptyDb();
+  // On Vercel the function filesystem is read-only, so `mkdirSync` /
+  // `readFileSync` throw at module-init time and would crash the entire
+  // route lambda before any of our config-guard logic ever runs. Wrap
+  // EVERY filesystem touch so the module is safe to import anywhere; if
+  // we end up using the local store on a writable FS we just lose
+  // disk persistence, which is fine for dev.
   try {
+    if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
+    if (!existsSync(STORE_FILE)) return emptyDb();
     const raw = readFileSync(STORE_FILE, "utf8");
     const parsed = JSON.parse(raw);
     return { ...emptyDb(), ...parsed };
@@ -66,8 +72,12 @@ function loadSync(): DBState {
 let db: DBState = loadSync();
 
 function persist(): void {
-  if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
-  writeFileSync(STORE_FILE, JSON.stringify(db, null, 2));
+  try {
+    if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
+    writeFileSync(STORE_FILE, JSON.stringify(db, null, 2));
+  } catch {
+    // Read-only filesystem (e.g. Vercel): keep state in memory only.
+  }
 }
 
 function uuid(): string {
