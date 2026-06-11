@@ -4,6 +4,8 @@ import { getServerSupabase } from "@/lib/supabaseServer";
 import { ADMIN_COOKIE, verifyAdminToken } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const fetchCache = "force-no-store";
 export const runtime = "nodejs";
 
 export async function GET() {
@@ -26,14 +28,16 @@ export async function GET() {
     .eq("is_demo", true);
   if (e1b) return NextResponse.json({ error: e1b.message }, { status: 500 });
 
-  // Latest round
-  const { data: lastRound, error: e2 } = await supa
+  // Latest round. .limit(1) + arr[0] for the same reason as the raffle/pool
+  // route — .maybeSingle() was returning null on Vercel even when the row
+  // existed.
+  const { data: lastRounds, error: e2 } = await supa
     .from("raffle_rounds")
     .select("id, round_number, started_at, frozen_at")
     .order("round_number", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .limit(1);
   if (e2) return NextResponse.json({ error: e2.message }, { status: 500 });
+  const lastRound = lastRounds?.[0];
 
   // Entries-in-any-round. We only need the count, so HEAD with `count:exact`
   // — much cheaper than streaming every row back, especially with 2,000+

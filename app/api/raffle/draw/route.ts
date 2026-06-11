@@ -3,6 +3,8 @@ import { randomInt } from "crypto";
 import { getServerSupabase } from "@/lib/supabaseServer";
 
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const fetchCache = "force-no-store";
 export const runtime = "nodejs";
 
 // The raffle screen is on a hidden URL; we don't gate by admin auth here
@@ -25,15 +27,17 @@ export async function POST(req: Request) {
 
   const supa = getServerSupabase();
 
-  // Latest round
-  const { data: round, error: roundErr } = await supa
+  // Latest round. Using .limit(1) + arr[0] instead of .maybeSingle() — the
+  // same .maybeSingle() pattern was silently returning null on Vercel even
+  // when the row existed (see pool route for details).
+  const { data: rounds, error: roundErr } = await supa
     .from("raffle_rounds")
     .select("id, round_number")
     .order("round_number", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .limit(1);
 
   if (roundErr) return NextResponse.json({ error: roundErr.message }, { status: 500 });
+  const round = rounds?.[0];
   if (!round) {
     return NextResponse.json({ error: "No active raffle round." }, { status: 409 });
   }

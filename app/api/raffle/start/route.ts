@@ -4,6 +4,8 @@ import { getServerSupabase } from "@/lib/supabaseServer";
 import { ADMIN_COOKIE, verifyAdminToken } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const fetchCache = "force-no-store";
 export const runtime = "nodejs";
 
 export async function POST() {
@@ -53,18 +55,19 @@ export async function POST() {
     );
   }
 
-  // Determine next round number
-  const { data: lastRound, error: lastErr } = await supa
+  // Determine next round number. .limit(1) + arr[0] instead of
+  // .maybeSingle() — the latter was silently returning null on Vercel.
+  const { data: lastRounds, error: lastErr } = await supa
     .from("raffle_rounds")
     .select("round_number")
     .order("round_number", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .limit(1);
 
   if (lastErr) {
     return NextResponse.json({ error: lastErr.message }, { status: 500 });
   }
 
+  const lastRound = lastRounds?.[0];
   const nextNumber = (lastRound?.round_number ?? 0) + 1;
   const now = new Date().toISOString();
 

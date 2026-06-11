@@ -4,6 +4,8 @@ import { getServerSupabase } from "@/lib/supabaseServer";
 import { ADMIN_COOKIE, verifyAdminToken } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const fetchCache = "force-no-store";
 export const runtime = "nodejs";
 
 /**
@@ -23,16 +25,16 @@ export async function POST() {
 
   const supa = getServerSupabase();
 
-  const { data: round, error: roundErr } = await supa
+  const { data: rounds, error: roundErr } = await supa
     .from("raffle_rounds")
     .select("id, round_number")
     .order("round_number", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .limit(1);
 
   if (roundErr) {
     return NextResponse.json({ error: roundErr.message }, { status: 500 });
   }
+  const round = rounds?.[0];
   if (!round) {
     return NextResponse.json(
       { error: "No active raffle round to reset." },

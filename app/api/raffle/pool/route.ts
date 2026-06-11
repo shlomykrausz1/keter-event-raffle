@@ -2,24 +2,48 @@ import { NextResponse } from "next/server";
 import { getServerSupabase } from "@/lib/supabaseServer";
 
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const fetchCache = "force-no-store";
 export const runtime = "nodejs";
+
+// Belt-and-suspenders cache control. `dynamic = "force-dynamic"` already
+// disables Next's data cache, but production was still seeing stale responses
+// (`/api/raffle/pool` reported `round_id: null` while the same query in
+// `/api/admin/stats` saw the freshly-created round). Adding explicit headers
+// guarantees no Vercel edge / browser / CDN caches the response.
+const NO_STORE_HEADERS = {
+  "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+  Pragma: "no-cache",
+  Expires: "0",
+};
+
+function json(data: unknown, init: { status?: number } = {}) {
+  return NextResponse.json(data, {
+    status: init.status ?? 200,
+    headers: NO_STORE_HEADERS,
+  });
+}
 
 export async function GET() {
   const supa = getServerSupabase();
 
-  // Latest round
-  const { data: roundRow, error: roundErr } = await supa
+  // Latest round. We deliberately do NOT use `.maybeSingle()` here — on
+  // Vercel that call was silently returning `data: null` even when the row
+  // existed (the same code path works fine locally with identical packages,
+  // so the safest course is to ask PostgREST for an array and take the
+  // first element ourselves).
+  const { data: rounds, error: roundErr } = await supa
     .from("raffle_rounds")
     .select("id, round_number, frozen_at")
     .order("round_number", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .limit(1);
 
   if (roundErr) {
-    return NextResponse.json({ error: roundErr.message }, { status: 500 });
+    return json({ error: roundErr.message }, { status: 500 });
   }
+  const roundRow = rounds?.[0];
   if (!roundRow) {
-    return NextResponse.json({
+    return json({
       round_id: null,
       round_number: null,
       frozen_at: null,
@@ -31,8 +55,8 @@ export async function GET() {
   }
 
   // Snapshot entries in round. Supabase caps select responses at 1,000 rows
-  // by default; the event expects ~2,000 entries, so we explicitly widen the
-  // page.
+  // by default; the event expects ~2,000 entries, so we explicitly widen
+  // the page.
   const { data: rre, error: rreErr } = await supa
     .from("raffle_round_entries")
     .select("entry_id, entries:entries(id, full_name)")
@@ -40,7 +64,7 @@ export async function GET() {
     .range(0, 49999);
 
   if (rreErr) {
-    return NextResponse.json({ error: rreErr.message }, { status: 500 });
+    return json({ error: rreErr.message }, { status: 500 });
   }
 
   // Winners in this round
@@ -51,7 +75,7 @@ export async function GET() {
     .order("won_at", { ascending: true });
 
   if (wErr) {
-    return NextResponse.json({ error: wErr.message }, { status: 500 });
+    return json({ error: wErr.message }, { status: 500 });
   }
 
   const wonIds = new Set((winners ?? []).map((w: any) => w.entry_id));
@@ -63,7 +87,7 @@ export async function GET() {
     .map((r: any) => r.entries?.full_name || "")
     .filter(Boolean);
 
-  return NextResponse.json({
+  return json({
     round_id: roundRow.id,
     round_number: roundRow.round_number,
     frozen_at: roundRow.frozen_at,
