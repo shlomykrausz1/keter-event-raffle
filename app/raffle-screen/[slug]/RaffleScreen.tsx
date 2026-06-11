@@ -104,10 +104,19 @@ export default function RaffleScreen() {
   useEffect(() => {
     if (!pool || pool.round_id == null) return;
 
-    const newRound = lastRoundIdRef.current !== pool.round_id;
-    lastRoundIdRef.current = pool.round_id;
+    const previousRoundId = lastRoundIdRef.current;
+    const currentRoundId = pool.round_id;
+    lastRoundIdRef.current = currentRoundId;
 
-    if (newRound) {
+    // A *real* round change is one non-null round id being replaced by a
+    // different non-null round id (admin clicked "Start New Raffle"). The
+    // first render after a page refresh (null -> uuid) is NOT a round change;
+    // treating it as one wipes the winner overlays the LED screen is meant to
+    // restore. So we only clear here on a true change.
+    const isRoundChange =
+      previousRoundId != null && previousRoundId !== currentRoundId;
+
+    if (isRoundChange) {
       setWheels({
         gift: {
           segments: pickSegments(pool.names),

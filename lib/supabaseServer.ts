@@ -27,6 +27,20 @@ export function getServerSupabase(): SupabaseClient {
     return cached;
   }
 
+  // The file-backed local store writes to `<cwd>/.data/store.json`. That works
+  // in `npm run dev` but on Vercel the function filesystem is read-only, so a
+  // write would crash the function and Next.js would return an HTML 500
+  // (which the form code then surfaces as a vague "Network error"). Refuse
+  // the fallback in production so API routes can return a clean JSON 503
+  // explaining what's actually wrong.
+  const isProduction =
+    process.env.VERCEL === "1" || process.env.NODE_ENV === "production";
+  if (isProduction) {
+    throw new Error(
+      "Supabase is not configured. Set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in the Vercel project settings, then redeploy."
+    );
+  }
+
   if (!warnedLocal) {
     warnedLocal = true;
     // eslint-disable-next-line no-console

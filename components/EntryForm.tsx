@@ -62,7 +62,22 @@ export default function EntryForm() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
       });
-      const data = await res.json();
+      // The route always returns JSON (success, validation, or 503). But if
+      // the platform itself crashes (env vars missing → HTML 500), `res.json()`
+      // would throw — fall back to text so the user sees a real message
+      // instead of "Network error."
+      let data: any = null;
+      try {
+        data = await res.json();
+      } catch {
+        const text = await res.text().catch(() => "");
+        data = {
+          error:
+            text && text.length < 200
+              ? text
+              : `The server returned an unexpected response (${res.status}). Please try again or notify the event operator.`,
+        };
+      }
       if (!res.ok) {
         setError(data?.error || "Something went wrong. Please try again.");
         setSubmitting(false);
@@ -77,7 +92,9 @@ export default function EntryForm() {
         setSuccess(false);
       }, 3000);
     } catch {
-      setError("Network error. Please try again.");
+      setError(
+        "Could not reach the server. Check your connection and try again."
+      );
       setSubmitting(false);
     }
   };
