@@ -87,9 +87,13 @@ export async function POST(req: Request) {
 
   // Insert winner; the unique (round_id, entry_id) constraint protects
   // against a person winning twice in the same round under any race.
-  const { error: insErr } = await supa
+  // We capture won_at so the LED screen can tell newly-appeared winners
+  // (e.g. triggered from the phone remote) apart from already-shown ones
+  // when polling /api/raffle/pool.
+  const { data: insertedRows, error: insErr } = await supa
     .from("winners")
-    .insert({ round_id: round.id, entry_id: winnerEntryId, prize });
+    .insert({ round_id: round.id, entry_id: winnerEntryId, prize })
+    .select("won_at");
 
   if (insErr) {
     if ((insErr as any).code === "23505") {
@@ -100,6 +104,7 @@ export async function POST(req: Request) {
     }
     return NextResponse.json({ error: insErr.message }, { status: 500 });
   }
+  const wonAt = insertedRows?.[0]?.won_at ?? new Date().toISOString();
 
   const { data: entry, error: entryErr } = await supa
     .from("entries")
@@ -116,6 +121,7 @@ export async function POST(req: Request) {
       full_name: entry.full_name,
       phone_display: entry.phone_display,
       prize,
+      won_at: wonAt,
     },
   });
 }

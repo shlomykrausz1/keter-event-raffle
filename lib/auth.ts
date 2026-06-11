@@ -75,3 +75,17 @@ export async function verifyAdminToken(
 }
 
 export const ADMIN_COOKIE = COOKIE_NAME;
+
+/**
+ * Header name the remote-control phone page uses to prove it knows
+ * REMOTE_CONTROL_SLUG. Routes accept this OR the admin cookie.
+ */
+export const REMOTE_SLUG_HEADER = "x-remote-slug";
+
+/** Returns true if the header carries the configured remote slug. */
+export function isRemoteSlugValid(slug: string | null | undefined): boolean {
+  const expected = process.env.REMOTE_CONTROL_SLUG;
+  if (!expected || expected.length < 4) return false;
+  if (!slug) return false;
+  return slug === expected;
+}

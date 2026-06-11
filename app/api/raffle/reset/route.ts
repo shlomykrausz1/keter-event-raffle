@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { getServerSupabase } from "@/lib/supabaseServer";
-import { ADMIN_COOKIE, verifyAdminToken } from "@/lib/auth";
+import {
+  ADMIN_COOKIE,
+  REMOTE_SLUG_HEADER,
+  isRemoteSlugValid,
+  verifyAdminToken,
+} from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -19,7 +24,11 @@ export const runtime = "nodejs";
  *  - Does NOT affect any other round.
  */
 export async function POST() {
-  if (!(await verifyAdminToken(cookies().get(ADMIN_COOKIE)?.value))) {
+  // Accept either the admin cookie (browser dashboard) or the
+  // REMOTE_CONTROL_SLUG header (phone remote-control page).
+  const cookieOk = await verifyAdminToken(cookies().get(ADMIN_COOKIE)?.value);
+  const remoteOk = isRemoteSlugValid(headers().get(REMOTE_SLUG_HEADER));
+  if (!cookieOk && !remoteOk) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

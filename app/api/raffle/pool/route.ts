@@ -98,6 +98,7 @@ export async function GET() {
       prize: w.prize,
       full_name: w.entries?.full_name || "",
       phone_display: w.entries?.phone_display || "",
+      won_at: w.won_at,
     })),
   });
 }

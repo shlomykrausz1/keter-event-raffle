@@ -4,6 +4,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import Wheel from "@/components/Wheel";
 
+type ServerWinner = {
+  prize: string;
+  full_name: string;
+  phone_display: string;
+  won_at?: string;
+};
+
 type Pool = {
   round_id: string | null;
   round_number: number | null;
@@ -11,13 +18,14 @@ type Pool = {
   total: number;
   remaining: number;
   names: string[];
-  winners: Array<{ prize: string; full_name: string; phone_display: string }>;
+  winners: ServerWinner[];
 };
 
 type Winner = {
   full_name: string;
   phone_display: string;
   prize: string;
+  won_at?: string;
 };
 
 type WheelKey = "gift" | "book";
@@ -62,6 +70,12 @@ function placeWinnerInSegments(
   return { segments: next, index: idx };
 }
 
+// Stable per-draw identity so we can tell "already animated this winner"
+// from "winner just appeared (probably from the phone remote)".
+function drawKey(w: ServerWinner | Winner): string {
+  return `${w.prize}::${w.won_at ?? w.full_name}`;
+}
+
 export default function RaffleScreen() {
   const [pool, setPool] = useState<Pool | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -78,6 +92,13 @@ export default function RaffleScreen() {
   });
 
   const lastRoundIdRef = useRef<string | null>(null);
+  const hasHydratedRef = useRef(false);
+  // Track winners we've already responded to (either by animating, or by
+  // restoring on refresh). Key is `prize::won_at` — stable across polls,
+  // unique per draw. Cleared whenever the round changes.
+  const triggeredRef = useRef<Set<string>>(new Set());
+  // Mirror of `spinning` for synchronous reads inside the pool effect.
+  const spinningRef = useRef<WheelKey | null>(null);
 
   const fetchPool = useCallback(async () => {
     try {
@@ -97,9 +118,13 @@ export default function RaffleScreen() {
 
   useEffect(() => {
     fetchPool();
-    const id = setInterval(fetchPool, 5000);
+    const id = setInterval(fetchPool, 3000);
     return () => clearInterval(id);
   }, [fetchPool]);
+
+  useEffect(() => {
+    spinningRef.current = spinning;
+  }, [spinning]);
 
   useEffect(() => {
     if (!pool || pool.round_id == null) return;
@@ -108,31 +133,23 @@ export default function RaffleScreen() {
     const currentRoundId = pool.round_id;
     lastRoundIdRef.current = currentRoundId;
 
-    // A *real* round change is one non-null round id being replaced by a
-    // different non-null round id (admin clicked "Start New Raffle"). The
-    // first render after a page refresh (null -> uuid) is NOT a round change;
-    // treating it as one wipes the winner overlays the LED screen is meant to
-    // restore. So we only clear here on a true change.
+    const isFirstHydration = !hasHydratedRef.current;
     const isRoundChange =
       previousRoundId != null && previousRoundId !== currentRoundId;
 
     if (isRoundChange) {
+      // Admin clicked Start New Raffle — reset everything for the new round.
+      triggeredRef.current = new Set();
       setWheels({
-        gift: {
-          segments: pickSegments(pool.names),
-          winnerIndex: null,
-          pending: null,
-        },
-        book: {
-          segments: pickSegments(pool.names),
-          winnerIndex: null,
-          pending: null,
-        },
+        gift: { segments: pickSegments(pool.names), winnerIndex: null, pending: null },
+        book: { segments: pickSegments(pool.names), winnerIndex: null, pending: null },
       });
       setOverlays({ gift: null, book: null });
+      hasHydratedRef.current = true;
       return;
     }
 
+    // Initialize wheel segments if empty (e.g. first paint with non-empty pool).
     setWheels((prev) => {
       const next = { ...prev };
       (["gift", "book"] as WheelKey[]).forEach((k) => {
@@ -143,23 +160,40 @@ export default function RaffleScreen() {
       return next;
     });
 
-    setOverlays((prev) => {
-      const giftFromServer = pool.winners.find((w) => w.prize === PRIZE_GIFT) ?? null;
-      const bookFromServer = pool.winners.find((w) => w.prize === PRIZE_BOOK) ?? null;
-      // While a wheel is mid-spin we keep the current overlay (so the popup
-      // doesn't flash in before the wheel stops). Otherwise we follow the
-      // server — that way "Reset Current Raffle" (winners removed server-side)
-      // also clears the popup here.
-      return {
-        gift:
-          spinning === "gift" ? prev.gift : (giftFromServer as Winner | null),
-        book:
-          spinning === "book" ? prev.book : (bookFromServer as Winner | null),
-      };
-    });
+    const giftFromServer = pool.winners.find((w) => w.prize === PRIZE_GIFT) ?? null;
+    const bookFromServer = pool.winners.find((w) => w.prize === PRIZE_BOOK) ?? null;
 
-    // When the server has no winners for this round, also clear any pending
-    // wheel state so both wheels become spinnable again after a reset.
+    if (isFirstHydration) {
+      // Page just opened (incl. a refresh): restore overlays from server
+      // immediately (no spin animation — that draw already happened in the
+      // past). Mark each existing winner as "already triggered" so subsequent
+      // polls don't re-animate them.
+      if (giftFromServer) triggeredRef.current.add(drawKey(giftFromServer));
+      if (bookFromServer) triggeredRef.current.add(drawKey(bookFromServer));
+      setOverlays((prev) => ({
+        gift: spinning === "gift" ? prev.gift : (giftFromServer as Winner | null),
+        book: spinning === "book" ? prev.book : (bookFromServer as Winner | null),
+      }));
+      hasHydratedRef.current = true;
+      return;
+    }
+
+    // Subsequent poll — already hydrated.
+    //
+    // (a) If the server cleared a winner (admin clicked Reset), drop the
+    //     matching overlay so the wheel becomes spinnable again.
+    setOverlays((prev) => {
+      let next = prev;
+      if (!giftFromServer && prev.gift && spinning !== "gift") {
+        triggeredRef.current.delete(drawKey(prev.gift));
+        next = { ...next, gift: null };
+      }
+      if (!bookFromServer && prev.book && spinning !== "book") {
+        triggeredRef.current.delete(drawKey(prev.book));
+        next = { ...next, book: null };
+      }
+      return next;
+    });
     if (pool.winners.length === 0) {
       setWheels((prev) => {
         let changed = false;
@@ -174,6 +208,37 @@ export default function RaffleScreen() {
         return changed ? next : prev;
       });
     }
+
+    // (b) Detect newly-appeared winners (someone tapped Spin on the phone).
+    //     Only kick off one animation at a time — if a wheel is already
+    //     spinning, the second winner waits for the next poll cycle to
+    //     start. The `drawKey` check (`prize::won_at`) makes this idempotent
+    //     across polls.
+    if (spinningRef.current === null) {
+      const candidates: Array<[WheelKey, ServerWinner | null]> = [
+        ["gift", giftFromServer],
+        ["book", bookFromServer],
+      ];
+      for (const [key, srv] of candidates) {
+        if (!srv) continue;
+        if (triggeredRef.current.has(drawKey(srv))) continue;
+
+        triggeredRef.current.add(drawKey(srv));
+        spinningRef.current = key;
+        setSpinning(key);
+        setWheels((prev) => {
+          const cur = prev[key];
+          const base =
+            cur.segments.length > 0 ? cur.segments : pickSegments(pool.names);
+          const { segments, index } = placeWinnerInSegments(base, srv.full_name);
+          return {
+            ...prev,
+            [key]: { segments, winnerIndex: index, pending: srv as Winner },
+          };
+        });
+        break; // one animation per detection pass
+      }
+    }
   }, [pool, spinning]);
 
   const giftWon = overlays.gift != null;
@@ -185,6 +250,7 @@ export default function RaffleScreen() {
     async (which: WheelKey) => {
       if (spinning) return;
       const prize = which === "gift" ? PRIZE_GIFT : PRIZE_BOOK;
+      spinningRef.current = which;
       setSpinning(which);
       setError(null);
       try {
@@ -195,11 +261,15 @@ export default function RaffleScreen() {
         });
         const data = await res.json();
         if (!res.ok) {
+          spinningRef.current = null;
           setSpinning(null);
           setError(data?.error || "Draw failed.");
           return;
         }
         const winner = data.winner as Winner;
+        // Claim this draw — stops the pool effect from re-animating when
+        // the next poll surfaces the same winner.
+        triggeredRef.current.add(drawKey(winner));
         setWheels((prev) => {
           const cur = prev[which];
           const base =
@@ -211,6 +281,7 @@ export default function RaffleScreen() {
           };
         });
       } catch {
+        spinningRef.current = null;
         setSpinning(null);
         setError("Network error during draw.");
       }
@@ -224,6 +295,7 @@ export default function RaffleScreen() {
       if (winner) {
         setOverlays((prev) => ({ ...prev, [which]: winner }));
       }
+      spinningRef.current = null;
       setSpinning(null);
       fetchPool();
     },
