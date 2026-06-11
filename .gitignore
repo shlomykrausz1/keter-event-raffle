@@ -1,0 +1,28 @@
+# Dependencies
+node_modules
+
+# Build output
+.next
+out
+*.tsbuildinfo
+next-env.d.ts
+
+# Environment / secrets
+.env
+.env.local
+.env*.local
+
+# Local file-backed raffle store (dev only)
+.data
+
+# Vercel
+.vercel
+
+# Editor / OS
+.DS_Store
+.idea
+.vscode
+*.log
+
+# Claude Code session data
+.claude
