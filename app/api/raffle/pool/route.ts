@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServerSupabase } from "@/lib/supabaseServer";
 import { selectAllPaged } from "@/lib/supabasePagination";
+import { maskPhoneLast4 } from "@/lib/phone";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -102,7 +103,9 @@ export async function GET() {
     winners: (winners ?? []).map((w: any) => ({
       prize: w.prize,
       full_name: w.entries?.full_name || "",
-      phone_display: w.entries?.phone_display || "",
+      // This endpoint is public (the LED screen polls it without auth), so
+      // never expose the full phone number — last 4 digits only.
+      phone_display: maskPhoneLast4(w.entries?.phone_display || ""),
       won_at: w.won_at,
     })),
   });

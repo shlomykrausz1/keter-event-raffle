@@ -92,6 +92,19 @@ export async function POST(req: Request) {
   if (error) {
     // unique violation -> duplicate phone
     if ((error as any).code === "23505") {
+      // Log the blocked attempt for the analytics page. Best-effort only —
+      // a missing duplicate_attempts table (migration not run yet) must
+      // never break the entry flow.
+      try {
+        await supa.from("duplicate_attempts").insert({
+          phone_normalized,
+          phone_display,
+          attempted_name: full_name,
+          attempted_email: email,
+        });
+      } catch {
+        /* ignore */
+      }
       return NextResponse.json(
         { error: "This phone number has already entered the raffle." },
         { status: 409 }

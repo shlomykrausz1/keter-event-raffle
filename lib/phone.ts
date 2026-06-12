@@ -28,3 +28,10 @@ export function maskPhone(input: string): string {
   if (digits.length !== 10) return formatPhoneDisplay(input);
   return `(${digits.slice(0, 3)}) ***-${digits.slice(6)}`;
 }
+
+/** Mask everything except the last 4 digits: ***-***-1234 */
+export function maskPhoneLast4(input: string): string {
+  const digits = normalizePhone(input);
+  if (digits.length < 4) return "***-***-****";
+  return `***-***-${digits.slice(-4)}`;
+}

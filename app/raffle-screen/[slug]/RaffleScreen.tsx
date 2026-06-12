@@ -80,6 +80,33 @@ export default function RaffleScreen() {
   const [pool, setPool] = useState<Pool | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [spinning, setSpinning] = useState<WheelKey | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  // Press F to toggle true browser fullscreen (no Chrome bar / tabs). Only F
+  // toggles it — every other key is ignored. The browser exits fullscreen on
+  // Escape by itself; the fullscreenchange listener keeps our state in sync.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "f" && e.key !== "F") return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      e.preventDefault();
+      if (document.fullscreenElement) {
+        document.exitFullscreen().catch(() => {});
+      } else {
+        document.documentElement.requestFullscreen().catch(() => {});
+      }
+    };
+    const onFullscreenChange = () => {
+      setIsFullscreen(document.fullscreenElement != null);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    onFullscreenChange();
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("fullscreenchange", onFullscreenChange);
+    };
+  }, []);
 
   const [overlays, setOverlays] = useState<{
     gift: Winner | null;
@@ -371,6 +398,15 @@ export default function RaffleScreen() {
             <p className="text-deepPurple/70 text-xl">
               {error || "The host hasn't started a raffle round yet."}
             </p>
+          </div>
+        </div>
+      )}
+
+      {/* Fullscreen hint — hidden once F is pressed and fullscreen is active */}
+      {!isFullscreen && (
+        <div className="absolute bottom-5 right-6 z-30 pointer-events-none">
+          <div className="glass rounded-full px-4 py-2 text-deepPurple/70 font-display tracking-[0.18em] text-xs uppercase">
+            Press F to enter fullscreen
           </div>
         </div>
       )}

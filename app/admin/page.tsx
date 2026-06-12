@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
+import Link from "next/link";
 import Background from "@/components/Background";
 
 type Stats = {
@@ -193,9 +194,17 @@ export default function AdminPage() {
               </p>
             </div>
           </div>
-          <button onClick={logout} className="btn-ghost px-5 py-2 text-sm">
-            Sign Out
-          </button>
+          <div className="flex items-center gap-3">
+            <Link href="/admin/entries" className="btn-ghost px-5 py-2 text-sm">
+              Entries
+            </Link>
+            <Link href="/admin/analytics" className="btn-ghost px-5 py-2 text-sm">
+              Analytics
+            </Link>
+            <button onClick={logout} className="btn-ghost px-5 py-2 text-sm">
+              Sign Out
+            </button>
+          </div>
         </header>
 
         {loading || !stats ? (

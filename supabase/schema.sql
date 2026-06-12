@@ -57,16 +57,34 @@ create index if not exists raffle_round_entries_round_idx on raffle_round_entrie
 -- ----- WINNERS ---------------------------------------------------
 -- One person cannot win two prizes in the same round (unique constraint).
 create table if not exists winners (
-  id        uuid primary key default gen_random_uuid(),
-  round_id  uuid not null references raffle_rounds(id) on delete cascade,
-  entry_id  uuid not null references entries(id)       on delete cascade,
-  prize     text not null,                  -- '$100 Gift Card' | 'Any Book In Store'
-  won_at    timestamptz not null default now(),
+  id           uuid primary key default gen_random_uuid(),
+  round_id     uuid not null references raffle_rounds(id) on delete cascade,
+  entry_id     uuid not null references entries(id)       on delete cascade,
+  prize        text not null,               -- '$100 Gift Card' | 'Any Book In Store'
+  won_at       timestamptz not null default now(),
+  picked_up    boolean not null default false,
+  picked_up_at timestamptz,
+  picked_up_by text,
   unique (round_id, entry_id)
 );
 
 create index if not exists winners_round_idx  on winners (round_id);
 create index if not exists winners_won_at_idx on winners (won_at desc);
+
+
+-- ----- DUPLICATE ATTEMPTS ----------------------------------------
+-- One row per blocked duplicate-phone entry submission (for analytics).
+create table if not exists duplicate_attempts (
+  id               uuid primary key default gen_random_uuid(),
+  phone_normalized text not null,
+  phone_display    text,
+  attempted_name   text,
+  attempted_email  text,
+  attempted_at     timestamptz not null default now()
+);
+
+create index if not exists duplicate_attempts_attempted_at_idx
+  on duplicate_attempts (attempted_at desc);
 
 
 -- =============================================================

@@ -32,10 +32,16 @@ type DBState = {
   raffle_rounds: Row[];
   raffle_round_entries: Row[];
   winners: Row[];
+  duplicate_attempts: Row[];
   _seeded?: boolean;
 };
 
-type TableName = "entries" | "raffle_rounds" | "raffle_round_entries" | "winners";
+type TableName =
+  | "entries"
+  | "raffle_rounds"
+  | "raffle_round_entries"
+  | "winners"
+  | "duplicate_attempts";
 
 const DATA_DIR = path.join(process.cwd(), ".data");
 const STORE_FILE = path.join(DATA_DIR, "store.json");
@@ -46,6 +52,7 @@ function emptyDb(): DBState {
     raffle_rounds: [],
     raffle_round_entries: [],
     winners: [],
+    duplicate_attempts: [],
   };
 }
 
@@ -222,9 +229,18 @@ function uniqueViolation(table: string, cols: string): PgError {
 
 type ExecResult = { data: any; error: any; count?: number | null };
 
+/** Convert a SQL LIKE/ILIKE pattern (%, _) into a case-insensitive RegExp. */
+function ilikeToRegex(pattern: string): RegExp {
+  const escaped = pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(
+    `^${escaped.replace(/%/g, "[\\s\\S]*").replace(/_/g, ".")}$`,
+    "i"
+  );
+}
+
 class Query implements PromiseLike<ExecResult> {
   private table: TableName;
-  private op: "select" | "insert" | "delete" | null = null;
+  private op: "select" | "insert" | "delete" | "update" | null = null;
   private selectSpec: SelectSpec | null = null;
   private wantCount: "exact" | null = null;
   private headOnly = false;
@@ -232,8 +248,9 @@ class Query implements PromiseLike<ExecResult> {
   private limitN: number | null = null;
   private rangeFrom: number | null = null;
   private rangeTo: number | null = null;
-  private filters: Array<{ col: string; val: any }> = [];
+  private filters: Array<(r: Row) => boolean> = [];
   private insertRows: Row[] = [];
+  private updateValues: Row | null = null;
   private singleMode: "single" | "maybeSingle" | null = null;
 
   constructor(table: string) {
@@ -265,8 +282,83 @@ class Query implements PromiseLike<ExecResult> {
     return this;
   }
 
+  update(values: Row): this {
+    this.op = "update";
+    this.updateValues = { ...values };
+    return this;
+  }
+
   eq(col: string, val: any): this {
-    this.filters.push({ col, val });
+    this.filters.push((r) => r[col] === val);
+    return this;
+  }
+
+  neq(col: string, val: any): this {
+    this.filters.push((r) => r[col] !== val);
+    return this;
+  }
+
+  gte(col: string, val: any): this {
+    this.filters.push((r) => r[col] != null && r[col] >= val);
+    return this;
+  }
+
+  lte(col: string, val: any): this {
+    this.filters.push((r) => r[col] != null && r[col] <= val);
+    return this;
+  }
+
+  lt(col: string, val: any): this {
+    this.filters.push((r) => r[col] != null && r[col] < val);
+    return this;
+  }
+
+  in(col: string, vals: any[]): this {
+    const set = new Set(vals);
+    this.filters.push((r) => set.has(r[col]));
+    return this;
+  }
+
+  ilike(col: string, pattern: string): this {
+    const re = ilikeToRegex(pattern);
+    this.filters.push((r) => typeof r[col] === "string" && re.test(r[col]));
+    return this;
+  }
+
+  /** Only `not(col, "in", "(a,b,c)")` is supported — that's all the app uses. */
+  not(col: string, op: string, val: any): this {
+    if (op === "in") {
+      const list = String(val)
+        .replace(/^\(/, "")
+        .replace(/\)$/, "")
+        .split(",")
+        .map((s) => s.trim().replace(/^"|"$/g, ""))
+        .filter(Boolean);
+      const set = new Set(list);
+      this.filters.push((r) => !set.has(String(r[col])));
+    }
+    return this;
+  }
+
+  /**
+   * PostgREST-style OR filter: "a.ilike.%x%,b.eq.y". Only `ilike` and `eq`
+   * are supported — the only operators this app sends.
+   */
+  or(clauses: string): this {
+    const parts = clauses
+      .split(",")
+      .map((c) => {
+        const m = c.match(/^([\w]+)\.(ilike|eq)\.([\s\S]*)$/);
+        if (!m) return null;
+        const [, col, op, raw] = m;
+        if (op === "ilike") {
+          const re = ilikeToRegex(raw);
+          return (r: Row) => typeof r[col] === "string" && re.test(r[col]);
+        }
+        return (r: Row) => String(r[col]) === raw;
+      })
+      .filter(Boolean) as Array<(r: Row) => boolean>;
+    this.filters.push((r) => parts.some((p) => p(r)));
     return this;
   }
 
@@ -299,7 +391,28 @@ class Query implements PromiseLike<ExecResult> {
   private exec(): ExecResult {
     if (this.op === "insert") return this.execInsert();
     if (this.op === "delete") return this.execDelete();
+    if (this.op === "update") return this.execUpdate();
     return this.execSelect();
+  }
+
+  private execUpdate(): ExecResult {
+    const updated: Row[] = [];
+    for (const r of db[this.table]) {
+      if (this.filters.every((f) => f(r))) {
+        Object.assign(r, this.updateValues);
+        updated.push(r);
+      }
+    }
+    persist();
+
+    if (this.selectSpec) {
+      const projected = updated.map((r) =>
+        pickRow(r, this.selectSpec!.topLevel)
+      );
+      if (this.singleMode) return { data: projected[0] ?? null, error: null };
+      return { data: projected, error: null };
+    }
+    return { data: null, error: null, count: updated.length };
   }
 
   private execInsert(): ExecResult {
@@ -357,6 +470,8 @@ class Query implements PromiseLike<ExecResult> {
             error: uniqueViolation("winners", "round_id,entry_id"),
           };
         }
+        if (row.picked_up == null) row.picked_up = false;
+        if (!row.won_at) row.won_at = nowIso();
       }
 
       db[this.table].push(row);
@@ -384,7 +499,7 @@ class Query implements PromiseLike<ExecResult> {
     const remaining: Row[] = [];
     const removed: Row[] = [];
     for (const r of db[this.table]) {
-      const match = this.filters.every((f) => r[f.col] === f.val);
+      const match = this.filters.every((f) => f(r));
       if (match) removed.push(r);
       else remaining.push(r);
     }
@@ -405,9 +520,7 @@ class Query implements PromiseLike<ExecResult> {
   }
 
   private execSelect(): ExecResult {
-    let rows = db[this.table].filter((r) =>
-      this.filters.every((f) => r[f.col] === f.val)
-    );
+    let rows = db[this.table].filter((r) => this.filters.every((f) => f(r)));
 
     if (this.orderBy) {
       const { col, ascending } = this.orderBy;
@@ -423,12 +536,13 @@ class Query implements PromiseLike<ExecResult> {
       });
     }
 
+    // Count reflects ALL matching rows (pre limit/range), like PostgREST.
+    const count = this.wantCount === "exact" ? rows.length : undefined;
+
     if (this.limitN != null) rows = rows.slice(0, this.limitN);
     if (this.rangeFrom != null && this.rangeTo != null) {
       rows = rows.slice(this.rangeFrom, this.rangeTo + 1);
     }
-
-    const count = this.wantCount === "exact" ? rows.length : undefined;
 
     if (this.headOnly) {
       return { data: null, error: null, count: count ?? null };

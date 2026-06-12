@@ -89,3 +89,17 @@ export function isRemoteSlugValid(slug: string | null | undefined): boolean {
   if (!slug) return false;
   return slug === expected;
 }
+
+/**
+ * Header name the staff pickup page uses to prove it knows STAFF_PAGE_SLUG.
+ * Staff routes accept this OR the admin cookie.
+ */
+export const STAFF_SLUG_HEADER = "x-staff-slug";
+
+/** Returns true if the header carries the configured staff page slug. */
+export function isStaffSlugValid(slug: string | null | undefined): boolean {
+  const expected = process.env.STAFF_PAGE_SLUG;
+  if (!expected || expected.length < 4) return false;
+  if (!slug) return false;
+  return slug === expected;
+}

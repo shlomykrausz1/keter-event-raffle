@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { randomInt } from "crypto";
 import { getServerSupabase } from "@/lib/supabaseServer";
 import { selectAllPaged } from "@/lib/supabasePagination";
+import { maskPhoneLast4 } from "@/lib/phone";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -130,7 +131,9 @@ export async function POST(req: Request) {
   return NextResponse.json({
     winner: {
       full_name: entry.full_name,
-      phone_display: entry.phone_display,
+      // Public endpoint (LED screen + remote both call it without admin
+      // auth) — never return the full phone number here.
+      phone_display: maskPhoneLast4(entry.phone_display),
       prize,
       won_at: wonAt,
     },
