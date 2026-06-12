@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import ExcelJS from "exceljs";
 import { getServerSupabase } from "@/lib/supabaseServer";
+import { selectAllPaged } from "@/lib/supabasePagination";
 import { ADMIN_COOKIE, verifyAdminToken } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -13,21 +14,41 @@ export async function GET() {
   }
   const supa = getServerSupabase();
 
-  const { data: entries, error: e1 } = await supa
-    .from("entries")
-    .select("*")
-    .order("created_at", { ascending: true })
-    .range(0, 99999);
-  if (e1) return NextResponse.json({ error: e1.message }, { status: 500 });
-
-  const { data: winners, error: e2 } = await supa
-    .from("winners")
-    .select("entry_id, prize, won_at, rounds:raffle_rounds(round_number)")
-    .range(0, 99999);
-  if (e2) return NextResponse.json({ error: e2.message }, { status: 500 });
+  // Page every table — see export-csv route for the db-max-rows backstory.
+  let entries: any[];
+  let winners: any[];
+  let rre: any[];
+  try {
+    [entries, winners, rre] = await Promise.all([
+      selectAllPaged<any>((from, to) =>
+        supa
+          .from("entries")
+          .select("*")
+          .order("created_at", { ascending: true })
+          .range(from, to)
+      ),
+      selectAllPaged<any>((from, to) =>
+        supa
+          .from("winners")
+          .select("entry_id, prize, won_at, rounds:raffle_rounds(round_number)")
+          .range(from, to)
+      ),
+      selectAllPaged<any>((from, to) =>
+        supa
+          .from("raffle_round_entries")
+          .select("entry_id, rounds:raffle_rounds(round_number)")
+          .range(from, to)
+      ),
+    ]);
+  } catch (e: any) {
+    return NextResponse.json(
+      { error: e?.message || "Failed to load export data." },
+      { status: 500 }
+    );
+  }
 
   const winnerMap = new Map<string, { prize: string; round_number: number | null; won_at: string }>();
-  (winners ?? []).forEach((w: any) => {
+  winners.forEach((w) => {
     winnerMap.set(w.entry_id, {
       prize: w.prize,
       round_number: w.rounds?.round_number ?? null,
@@ -35,14 +56,8 @@ export async function GET() {
     });
   });
 
-  const { data: rre, error: e3 } = await supa
-    .from("raffle_round_entries")
-    .select("entry_id, rounds:raffle_rounds(round_number)")
-    .range(0, 99999);
-  if (e3) return NextResponse.json({ error: e3.message }, { status: 500 });
-
   const roundMap = new Map<string, number>();
-  (rre ?? []).forEach((r: any) => {
+  rre.forEach((r) => {
     const rn = r.rounds?.round_number;
     if (rn != null && !roundMap.has(r.entry_id)) {
       roundMap.set(r.entry_id, rn);
@@ -77,7 +92,7 @@ export async function GET() {
   ws.getRow(1).height = 22;
   ws.views = [{ state: "frozen", ySplit: 1 }];
 
-  for (const e of entries ?? []) {
+  for (const e of entries) {
     const w = winnerMap.get(e.id);
     ws.addRow({
       full_name: e.full_name,
@@ -112,16 +127,25 @@ export async function GET() {
   ws2.views = [{ state: "frozen", ySplit: 1 }];
 
   // Pull winners with entry info
-  const { data: winnersFull, error: wfErr } = await supa
-    .from("winners")
-    .select(
-      "prize, won_at, entries:entries(full_name, phone_display), rounds:raffle_rounds(round_number)"
-    )
-    .order("won_at", { ascending: true })
-    .range(0, 99999);
-  if (wfErr) return NextResponse.json({ error: wfErr.message }, { status: 500 });
+  let winnersFull: any[];
+  try {
+    winnersFull = await selectAllPaged<any>((from, to) =>
+      supa
+        .from("winners")
+        .select(
+          "prize, won_at, entries:entries(full_name, phone_display), rounds:raffle_rounds(round_number)"
+        )
+        .order("won_at", { ascending: true })
+        .range(from, to)
+    );
+  } catch (e: any) {
+    return NextResponse.json(
+      { error: e?.message || "Failed to load winners." },
+      { status: 500 }
+    );
+  }
 
-  for (const w of winnersFull ?? []) {
+  for (const w of winnersFull) {
     ws2.addRow({
       round: (w as any).rounds?.round_number ?? "",
       prize: (w as any).prize,

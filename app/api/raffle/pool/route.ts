@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getServerSupabase } from "@/lib/supabaseServer";
+import { selectAllPaged } from "@/lib/supabasePagination";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -54,17 +55,21 @@ export async function GET() {
     });
   }
 
-  // Snapshot entries in round. Supabase caps select responses at 1,000 rows
-  // by default; the event expects ~2,000 entries, so we explicitly widen
-  // the page.
-  const { data: rre, error: rreErr } = await supa
-    .from("raffle_round_entries")
-    .select("entry_id, entries:entries(id, full_name)")
-    .eq("round_id", roundRow.id)
-    .range(0, 49999);
-
-  if (rreErr) {
-    return json({ error: rreErr.message }, { status: 500 });
+  // Snapshot entries in round. PostgREST silently caps any single response
+  // at the server-side `db-max-rows` setting (often 1,000 rows on hosted
+  // Supabase) regardless of `.range()` — page through the table instead so
+  // a 3,000-row frozen pool actually surfaces all 3,000.
+  let rre: Array<{ entry_id: string; entries: any }>;
+  try {
+    rre = await selectAllPaged<{ entry_id: string; entries: any }>((from, to) =>
+      supa
+        .from("raffle_round_entries")
+        .select("entry_id, entries:entries(id, full_name)")
+        .eq("round_id", roundRow.id)
+        .range(from, to)
+    );
+  } catch (e: any) {
+    return json({ error: e?.message || "Failed to load pool." }, { status: 500 });
   }
 
   // Winners in this round
@@ -79,12 +84,12 @@ export async function GET() {
   }
 
   const wonIds = new Set((winners ?? []).map((w: any) => w.entry_id));
-  const total = rre?.length ?? 0;
+  const total = rre.length;
   const remaining = total - wonIds.size;
 
-  const names: string[] = (rre ?? [])
-    .filter((r: any) => !wonIds.has(r.entry_id))
-    .map((r: any) => r.entries?.full_name || "")
+  const names: string[] = rre
+    .filter((r) => !wonIds.has(r.entry_id))
+    .map((r) => r.entries?.full_name || "")
     .filter(Boolean);
 
   return json({

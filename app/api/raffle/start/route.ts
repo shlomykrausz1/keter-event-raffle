@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies, headers } from "next/headers";
 import { getServerSupabase } from "@/lib/supabaseServer";
+import { selectAllPaged } from "@/lib/supabasePagination";
 import {
   ADMIN_COOKIE,
   REMOTE_SLUG_HEADER,
@@ -13,6 +14,10 @@ export const revalidate = 0;
 export const fetchCache = "force-no-store";
 export const runtime = "nodejs";
 
+const log = (...args: unknown[]) =>
+  // eslint-disable-next-line no-console
+  console.log("[raffle/start]", ...args);
+
 export async function POST() {
   // Accept either the admin cookie (browser dashboard) or the
   // REMOTE_CONTROL_SLUG header (phone remote-control page).
@@ -24,34 +29,87 @@ export async function POST() {
 
   const supa = getServerSupabase();
 
-  // Find IDs of entries that are already in any prior round.
-  // Note: For very large events we could do a server-side anti-join; the
-  // dataset here is small. `.range()` widens the default Supabase page so
-  // 2,000+ entries don't get silently truncated to 1,000.
-  const { data: usedRows, error: usedErr } = await supa
-    .from("raffle_round_entries")
-    .select("entry_id")
-    .range(0, 99999);
+  // ---- 1. Authoritative counts (HEAD requests bypass db-max-rows) ----
+  const [{ count: totalEntries, error: cTotalErr }, { count: totalUsed, error: cUsedErr }] =
+    await Promise.all([
+      supa.from("entries").select("id", { count: "exact", head: true }),
+      supa.from("raffle_round_entries").select("entry_id", { count: "exact", head: true }),
+    ]);
 
-  if (usedErr) {
-    return NextResponse.json({ error: usedErr.message }, { status: 500 });
+  if (cTotalErr) {
+    log("count(entries) failed:", cTotalErr.message);
+    return NextResponse.json({ error: cTotalErr.message }, { status: 500 });
   }
-  const usedIds = new Set((usedRows ?? []).map((r: any) => r.entry_id));
+  if (cUsedErr) {
+    log("count(raffle_round_entries) failed:", cUsedErr.message);
+    return NextResponse.json({ error: cUsedErr.message }, { status: 500 });
+  }
+  log(
+    `counts -> entries=${totalEntries ?? 0}, raffle_round_entries=${totalUsed ?? 0}, ` +
+      `expected eligible=${(totalEntries ?? 0) - (totalUsed ?? 0)}`
+  );
 
-  // All entries (non-demo? include demo so admin can test; demo is just a flag).
-  const { data: allEntries, error: allErr } = await supa
-    .from("entries")
-    .select("id, created_at")
-    .order("created_at", { ascending: true })
-    .range(0, 99999);
-
-  if (allErr) {
-    return NextResponse.json({ error: allErr.message }, { status: 500 });
+  // ---- 2. Pull every entry id and every already-used entry id ----
+  //
+  // We MUST page through these tables. A single `.range(0, 99999)` is
+  // silently capped at PostgREST's `db-max-rows` (often 1,000 rows) — that
+  // was the bug: the start route would freeze only the first ~1k entries
+  // while admin (which uses HEAD count queries that bypass the cap)
+  // correctly reported the full 3,000+. The two numbers MUST agree.
+  let usedRows: Array<{ entry_id: string }>;
+  let allEntries: Array<{ id: string; created_at: string }>;
+  try {
+    [usedRows, allEntries] = await Promise.all([
+      selectAllPaged<{ entry_id: string }>((from, to) =>
+        supa.from("raffle_round_entries").select("entry_id").range(from, to)
+      ),
+      selectAllPaged<{ id: string; created_at: string }>((from, to) =>
+        supa
+          .from("entries")
+          .select("id, created_at")
+          .order("created_at", { ascending: true })
+          .range(from, to)
+      ),
+    ]);
+  } catch (e: any) {
+    log("paged fetch failed:", e?.message || e);
+    return NextResponse.json(
+      { error: e?.message || "Failed to load entries." },
+      { status: 500 }
+    );
   }
 
-  const newEntryIds = (allEntries ?? [])
-    .filter((e: any) => !usedIds.has(e.id))
-    .map((e: any) => e.id);
+  // Sanity-check the paged fetch against the HEAD counts. If they disagree
+  // the round we're about to create would be wrong, so bail loudly instead
+  // of silently freezing a too-small pool.
+  if (allEntries.length !== (totalEntries ?? 0)) {
+    log(
+      `MISMATCH: fetched ${allEntries.length} entries but count says ${totalEntries}; aborting`
+    );
+    return NextResponse.json(
+      {
+        error: `Could not load all entries (got ${allEntries.length} of ${totalEntries}). Please try again.`,
+      },
+      { status: 500 }
+    );
+  }
+  if (usedRows.length !== (totalUsed ?? 0)) {
+    log(
+      `MISMATCH: fetched ${usedRows.length} used-entry rows but count says ${totalUsed}; aborting`
+    );
+    return NextResponse.json(
+      {
+        error: `Could not load prior round entries (got ${usedRows.length} of ${totalUsed}). Please try again.`,
+      },
+      { status: 500 }
+    );
+  }
+
+  const usedIds = new Set(usedRows.map((r) => r.entry_id));
+  const newEntryIds = allEntries.filter((e) => !usedIds.has(e.id)).map((e) => e.id);
+  log(
+    `eligible computed -> entries=${allEntries.length}, alreadyUsed=${usedIds.size}, eligible=${newEntryIds.length}`
+  );
 
   if (newEntryIds.length === 0) {
     return NextResponse.json(
@@ -63,8 +121,7 @@ export async function POST() {
     );
   }
 
-  // Determine next round number. .limit(1) + arr[0] instead of
-  // .maybeSingle() — the latter was silently returning null on Vercel.
+  // ---- 3. Determine next round number ----
   const { data: lastRounds, error: lastErr } = await supa
     .from("raffle_rounds")
     .select("round_number")
@@ -72,14 +129,13 @@ export async function POST() {
     .limit(1);
 
   if (lastErr) {
+    log("lookup last round failed:", lastErr.message);
     return NextResponse.json({ error: lastErr.message }, { status: 500 });
   }
-
-  const lastRound = lastRounds?.[0];
-  const nextNumber = (lastRound?.round_number ?? 0) + 1;
+  const nextNumber = (lastRounds?.[0]?.round_number ?? 0) + 1;
   const now = new Date().toISOString();
 
-  // Create round
+  // ---- 4. Create the round ----
   const { data: round, error: roundErr } = await supa
     .from("raffle_rounds")
     .insert({ round_number: nextNumber, started_at: now, frozen_at: now })
@@ -87,25 +143,71 @@ export async function POST() {
     .single();
 
   if (roundErr || !round) {
-    return NextResponse.json({ error: roundErr?.message ?? "Failed to start round" }, { status: 500 });
+    log("create round failed:", roundErr?.message);
+    return NextResponse.json(
+      { error: roundErr?.message ?? "Failed to start round" },
+      { status: 500 }
+    );
   }
+  log(`created round ${round.round_number} (${round.id})`);
 
-  // Snapshot entries. Chunk so a 2,000-entry payload doesn't go in one shot.
+  // ---- 5. Snapshot the frozen pool into raffle_round_entries ----
   const snapshotRows = newEntryIds.map((id) => ({
     round_id: round.id,
     entry_id: id,
   }));
   const CHUNK = 500;
+  const totalBatches = Math.ceil(snapshotRows.length / CHUNK);
+  let batchesRun = 0;
+  log(`inserting ${snapshotRows.length} rows in ${totalBatches} batches of ${CHUNK}`);
+
   for (let i = 0; i < snapshotRows.length; i += CHUNK) {
+    const slice = snapshotRows.slice(i, i + CHUNK);
     const { error: snapErr } = await supa
       .from("raffle_round_entries")
-      .insert(snapshotRows.slice(i, i + CHUNK));
+      .insert(slice);
+    batchesRun += 1;
     if (snapErr) {
-      // rollback: delete the round we just created (cascade clears any
-      // raffle_round_entries we already inserted).
+      log(
+        `batch ${batchesRun}/${totalBatches} (rows ${i}..${i + slice.length - 1}) failed: ${snapErr.message}; rolling back round`
+      );
       await supa.from("raffle_rounds").delete().eq("id", round.id);
       return NextResponse.json({ error: snapErr.message }, { status: 500 });
     }
+    log(`batch ${batchesRun}/${totalBatches} ok (${slice.length} rows)`);
+  }
+
+  // ---- 6. Verify the snapshot matches what we intended ----
+  //
+  // Even though every batch came back without an error, ask the DB how many
+  // rows are actually in the round. If anything was silently dropped (eg.
+  // unique-violation buried by the client, network mid-flight retry, etc.)
+  // we'd rather fail and rollback than open a raffle with the wrong pool.
+  const { count: snapshotCount, error: snapCountErr } = await supa
+    .from("raffle_round_entries")
+    .select("entry_id", { count: "exact", head: true })
+    .eq("round_id", round.id);
+
+  if (snapCountErr) {
+    log("post-insert count failed:", snapCountErr.message);
+    await supa.from("raffle_rounds").delete().eq("id", round.id);
+    return NextResponse.json({ error: snapCountErr.message }, { status: 500 });
+  }
+  log(
+    `post-insert count -> raffle_round_entries(round_id=${round.id})=${snapshotCount}; expected=${newEntryIds.length}`
+  );
+
+  if ((snapshotCount ?? 0) !== newEntryIds.length) {
+    log(
+      `MISMATCH after insert: have ${snapshotCount}, expected ${newEntryIds.length}; rolling back round`
+    );
+    await supa.from("raffle_rounds").delete().eq("id", round.id);
+    return NextResponse.json(
+      {
+        error: `Pool snapshot inserted ${snapshotCount ?? 0} of ${newEntryIds.length} rows. Please try again.`,
+      },
+      { status: 500 }
+    );
   }
 
   return NextResponse.json({

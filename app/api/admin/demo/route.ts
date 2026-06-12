@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { randomInt } from "crypto";
 import { getServerSupabase } from "@/lib/supabaseServer";
+import { selectAllPaged } from "@/lib/supabasePagination";
 import { ADMIN_COOKIE, verifyAdminToken } from "@/lib/auth";
 import { formatPhoneDisplay } from "@/lib/phone";
 
@@ -64,19 +65,23 @@ export async function POST(req: Request) {
   const supa = getServerSupabase();
   const count = parseCount(req);
 
-  // Pre-load existing normalized phones so we generate ones we KNOW are free.
-  // With 2,000 rows in a 10-area-code × 8M-tail space, naive random retries
-  // are still fast, but checking up front means batch insert won't blow up
-  // on a unique-constraint collision.
-  const { data: existing, error: exErr } = await supa
-    .from("entries")
-    .select("phone_normalized")
-    .range(0, 99999);
-  if (exErr) {
-    return NextResponse.json({ error: exErr.message }, { status: 500 });
+  // Pre-load existing normalized phones so we generate ones we KNOW are
+  // free. Page the table — `.range(0, 99999)` alone is silently capped at
+  // PostgREST's `db-max-rows`, which would let collisions sneak past the
+  // preflight and dump the batch insert into the per-row retry path.
+  let existing: Array<{ phone_normalized: string }>;
+  try {
+    existing = await selectAllPaged<{ phone_normalized: string }>((from, to) =>
+      supa.from("entries").select("phone_normalized").range(from, to)
+    );
+  } catch (e: any) {
+    return NextResponse.json(
+      { error: e?.message || "Failed to load existing phones." },
+      { status: 500 }
+    );
   }
   const used = new Set<string>(
-    (existing ?? []).map((e: any) => e.phone_normalized).filter(Boolean)
+    existing.map((e) => e.phone_normalized).filter(Boolean)
   );
 
   const rows: any[] = [];

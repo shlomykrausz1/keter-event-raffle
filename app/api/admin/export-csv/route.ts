@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { getServerSupabase } from "@/lib/supabaseServer";
+import { selectAllPaged } from "@/lib/supabasePagination";
 import { ADMIN_COOKIE, verifyAdminToken } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -21,37 +22,51 @@ export async function GET() {
   }
   const supa = getServerSupabase();
 
-  const { data: entries, error: e1 } = await supa
-    .from("entries")
-    .select("*")
-    .order("created_at", { ascending: true })
-    .range(0, 99999);
-  if (e1) return NextResponse.json({ error: e1.message }, { status: 500 });
-
-  // Map of entry_id -> { prize, round_number }
-  const { data: winners, error: e2 } = await supa
-    .from("winners")
-    .select("entry_id, prize, rounds:raffle_rounds(round_number)")
-    .range(0, 99999);
-  if (e2) return NextResponse.json({ error: e2.message }, { status: 500 });
+  // Page every table — PostgREST silently caps a single `.range(0, 99999)`
+  // at the server-side `db-max-rows` setting, so a 3k-row event would have
+  // exported only the first ~1k rows.
+  let entries: any[];
+  let winners: any[];
+  let rre: any[];
+  try {
+    [entries, winners, rre] = await Promise.all([
+      selectAllPaged<any>((from, to) =>
+        supa
+          .from("entries")
+          .select("*")
+          .order("created_at", { ascending: true })
+          .range(from, to)
+      ),
+      selectAllPaged<any>((from, to) =>
+        supa
+          .from("winners")
+          .select("entry_id, prize, rounds:raffle_rounds(round_number)")
+          .range(from, to)
+      ),
+      selectAllPaged<any>((from, to) =>
+        supa
+          .from("raffle_round_entries")
+          .select("entry_id, rounds:raffle_rounds(round_number)")
+          .range(from, to)
+      ),
+    ]);
+  } catch (e: any) {
+    return NextResponse.json(
+      { error: e?.message || "Failed to load export data." },
+      { status: 500 }
+    );
+  }
 
   const winnerMap = new Map<string, { prize: string; round_number: number | null }>();
-  (winners ?? []).forEach((w: any) => {
+  winners.forEach((w) => {
     winnerMap.set(w.entry_id, {
       prize: w.prize,
       round_number: w.rounds?.round_number ?? null,
     });
   });
 
-  // Map of entry_id -> earliest round_number it appeared in
-  const { data: rre, error: e3 } = await supa
-    .from("raffle_round_entries")
-    .select("entry_id, rounds:raffle_rounds(round_number)")
-    .range(0, 99999);
-  if (e3) return NextResponse.json({ error: e3.message }, { status: 500 });
-
   const roundMap = new Map<string, number>();
-  (rre ?? []).forEach((r: any) => {
+  rre.forEach((r) => {
     const rn = r.rounds?.round_number;
     if (rn != null && !roundMap.has(r.entry_id)) {
       roundMap.set(r.entry_id, rn);
@@ -73,7 +88,7 @@ export async function GET() {
   ];
 
   const lines = [header.join(",")];
-  for (const e of entries ?? []) {
+  for (const e of entries) {
     const w = winnerMap.get(e.id);
     const row = [
       e.full_name,

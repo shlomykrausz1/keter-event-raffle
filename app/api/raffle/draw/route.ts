@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { randomInt } from "crypto";
 import { getServerSupabase } from "@/lib/supabaseServer";
+import { selectAllPaged } from "@/lib/supabasePagination";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -42,16 +43,26 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "No active raffle round." }, { status: 409 });
   }
 
-  // Pool entries. Supabase caps select at 1,000 rows by default; the event
-  // expects ~2,000 entries, so we widen the page explicitly.
-  const { data: rre, error: rreErr } = await supa
-    .from("raffle_round_entries")
-    .select("entry_id")
-    .eq("round_id", round.id)
-    .range(0, 49999);
-
-  if (rreErr) return NextResponse.json({ error: rreErr.message }, { status: 500 });
-  if (!rre || rre.length === 0) {
+  // Pool entries. PostgREST caps any single response at `db-max-rows`
+  // regardless of `.range()`, so page through the table — otherwise the
+  // random pick would be drawn from only the first ~1,000 entries and
+  // every entry after that could never win.
+  let rre: Array<{ entry_id: string }>;
+  try {
+    rre = await selectAllPaged<{ entry_id: string }>((from, to) =>
+      supa
+        .from("raffle_round_entries")
+        .select("entry_id")
+        .eq("round_id", round.id)
+        .range(from, to)
+    );
+  } catch (e: any) {
+    return NextResponse.json(
+      { error: e?.message || "Failed to load pool." },
+      { status: 500 }
+    );
+  }
+  if (rre.length === 0) {
     return NextResponse.json({ error: "Raffle pool is empty." }, { status: 409 });
   }
 
