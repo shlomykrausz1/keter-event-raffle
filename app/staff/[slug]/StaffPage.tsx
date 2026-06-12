@@ -236,6 +236,21 @@ export default function StaffPage({ slug }: { slug: string }) {
                     </div>
                   </button>
 
+                  {/* Mark Picked Up is always one tap away — no need to
+                      expand the card. Sits outside the expand/collapse tap
+                      target so pressing it never toggles the card. */}
+                  {!w.picked_up && (
+                    <div className="px-5 pb-4">
+                      <button
+                        onClick={() => setPickup(w.id, true)}
+                        disabled={busyId !== null || migrationNeeded}
+                        className="btn-primary w-full py-4 text-base"
+                      >
+                        {busyId === w.id ? "Saving…" : "Mark Picked Up"}
+                      </button>
+                    </div>
+                  )}
+
                   {expanded && (
                     <div className="px-5 pb-5 border-t border-deepPurple/10 pt-4">
                       <dl className="text-base text-deepPurple/85 space-y-1.5 mb-4">
@@ -279,21 +294,13 @@ export default function StaffPage({ slug }: { slug: string }) {
                         )}
                       </dl>
 
-                      {w.picked_up ? (
+                      {w.picked_up && (
                         <button
                           onClick={() => setPickup(w.id, false)}
                           disabled={busyId !== null || migrationNeeded}
                           className="btn-ghost w-full py-3.5 text-sm"
                         >
                           {busyId === w.id ? "Saving…" : "Undo Pickup"}
-                        </button>
-                      ) : (
-                        <button
-                          onClick={() => setPickup(w.id, true)}
-                          disabled={busyId !== null || migrationNeeded}
-                          className="btn-primary w-full py-4 text-base"
-                        >
-                          {busyId === w.id ? "Saving…" : "Mark Picked Up"}
                         </button>
                       )}
                     </div>
