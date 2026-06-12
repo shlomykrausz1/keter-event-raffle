@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 type StaffWinner = {
   id: string;
@@ -15,6 +15,10 @@ type StaffWinner = {
   street_address: string;
   zip_code: string;
 };
+
+function digitsOf(s: string): string {
+  return (s || "").replace(/\D+/g, "");
+}
 
 function fmtTime(iso: string | null | undefined) {
   if (!iso) return "—";
@@ -39,6 +43,10 @@ export default function StaffPage({ slug }: { slug: string }) {
   const [migrationNeeded, setMigrationNeeded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  // Expanded card ids — kept separate from the winner data so the periodic
+  // refresh can swap in fresh data without collapsing what the worker has open.
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
   const load = useCallback(async () => {
     try {
@@ -64,6 +72,15 @@ export default function StaffPage({ slug }: { slug: string }) {
     const id = setInterval(load, 7000);
     return () => clearInterval(id);
   }, [load]);
+
+  const toggleExpanded = (id: string) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   const setPickup = async (winnerId: string, pickedUp: boolean) => {
     setBusyId(winnerId);
@@ -100,10 +117,23 @@ export default function StaffPage({ slug }: { slug: string }) {
     }
   };
 
+  const filtered = useMemo(() => {
+    if (!winners) return null;
+    const q = query.trim().toLowerCase();
+    if (!q) return winners;
+    const qDigits = digitsOf(q);
+    return winners.filter((w) => {
+      const nameHit = w.full_name.toLowerCase().includes(q);
+      const phoneHit =
+        qDigits.length >= 3 && digitsOf(w.phone_display).includes(qDigits);
+      return nameHit || phoneHit;
+    });
+  }, [winners, query]);
+
   return (
-    <main className="min-h-screen px-4 py-8">
-      <div className="max-w-2xl mx-auto">
-        <header className="text-center mb-6">
+    <main className="min-h-screen px-4 py-6">
+      <div className="max-w-xl mx-auto">
+        <header className="text-center mb-5">
           <h1 className="font-display text-deepPurple text-3xl tracking-[0.12em]">
             KETER STAFF
           </h1>
@@ -112,108 +142,165 @@ export default function StaffPage({ slug }: { slug: string }) {
           </p>
         </header>
 
+        {/* Search */}
+        <div className="mb-4">
+          <input
+            type="search"
+            inputMode="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search name or phone…"
+            className="input-premium !py-3.5 !px-5 !text-lg !rounded-2xl"
+          />
+        </div>
+
         {migrationNeeded && (
-          <div className="bg-eventRed/90 text-ivory rounded-2xl px-5 py-3 text-sm mb-4 text-center">
+          <div className="bg-eventRed/90 text-ivory rounded-2xl px-5 py-3 text-base mb-4 text-center">
             Pickup tracking is not set up yet — ask the event operator to run
             the database migration.
           </div>
         )}
 
         {error && (
-          <div className="bg-eventRed/90 text-ivory rounded-2xl px-5 py-3 text-sm mb-4 text-center">
+          <div className="bg-eventRed/90 text-ivory rounded-2xl px-5 py-3 text-base mb-4 text-center">
             {error}
           </div>
         )}
 
-        {winners == null ? (
-          <div className="glass rounded-3xl p-8 text-center text-deepPurple/70">
+        {filtered == null ? (
+          <div className="glass rounded-3xl p-8 text-center text-deepPurple/70 text-lg">
             Loading…
           </div>
-        ) : winners.length === 0 ? (
-          <div className="glass rounded-3xl p-8 text-center text-deepPurple/70">
-            No winners yet.
+        ) : filtered.length === 0 ? (
+          <div className="glass rounded-3xl p-8 text-center text-deepPurple/70 text-lg">
+            {query ? "No winners match your search." : "No winners yet."}
           </div>
         ) : (
-          <div className="space-y-4">
-            {winners.map((w) => (
-              <div
-                key={w.id}
-                className={`rounded-3xl p-5 ${
-                  w.picked_up
-                    ? "bg-green-100/85 border border-green-300/70 shadow-md"
-                    : "glass"
-                }`}
-              >
-                <div className="flex items-start justify-between gap-3 mb-2">
-                  <div>
-                    <h2 className="font-display text-deepPurple text-xl tracking-wide leading-tight">
-                      {w.full_name}
-                    </h2>
-                    <p className="text-deepPurple/70 text-sm font-medium">
-                      {w.prize}
-                      {w.round_number != null && (
-                        <span className="text-deepPurple/50">
-                          {" "}
-                          · Round {w.round_number}
-                        </span>
-                      )}
-                    </p>
-                  </div>
-                  {w.picked_up && (
-                    <span className="shrink-0 bg-green-600 text-white text-[11px] uppercase tracking-[0.14em] rounded-full px-3 py-1 font-medium">
-                      Picked Up
-                    </span>
-                  )}
-                </div>
+          <div className="space-y-3">
+            {filtered.map((w) => {
+              const expanded = expandedIds.has(w.id);
+              return (
+                <div
+                  key={w.id}
+                  className={`rounded-3xl overflow-hidden transition-colors ${
+                    w.picked_up
+                      ? "bg-green-100/90 border border-green-300/70 shadow-md"
+                      : "glass"
+                  }`}
+                >
+                  {/* Whole card header is the tap target */}
+                  <button
+                    type="button"
+                    onClick={() => toggleExpanded(w.id)}
+                    aria-expanded={expanded}
+                    className="w-full text-left px-5 py-4 active:bg-deepPurple/5"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="font-display text-deepPurple text-2xl leading-tight tracking-wide truncate">
+                          {w.full_name}
+                        </p>
+                        <p className="text-deepPurple text-xl font-medium tabular-nums">
+                          {w.phone_display}
+                        </p>
+                        <p className="text-deepPurple/70 text-base mt-0.5">
+                          {w.prize}
+                        </p>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        {w.picked_up ? (
+                          <>
+                            <span className="inline-block bg-green-600 text-white text-xs uppercase tracking-[0.12em] rounded-full px-3 py-1.5 font-medium">
+                              Picked Up
+                            </span>
+                            {w.picked_up_at && (
+                              <p className="text-green-800 text-sm mt-1.5">
+                                {fmtTime(w.picked_up_at)}
+                              </p>
+                            )}
+                          </>
+                        ) : (
+                          <span className="inline-block bg-deepPurple/10 text-deepPurple/70 text-xs uppercase tracking-[0.12em] rounded-full px-3 py-1.5 font-medium">
+                            Not Picked Up
+                          </span>
+                        )}
+                        <p
+                          className={`text-deepPurple/40 text-lg leading-none mt-2 transition-transform ${
+                            expanded ? "rotate-180" : ""
+                          }`}
+                          aria-hidden
+                        >
+                          ▾
+                        </p>
+                      </div>
+                    </div>
+                  </button>
 
-                <dl className="text-sm text-deepPurple/80 space-y-0.5 mb-3">
-                  <div>
-                    <dt className="inline text-deepPurple/50">Phone: </dt>
-                    <dd className="inline font-medium">{w.phone_display}</dd>
-                  </div>
-                  <div>
-                    <dt className="inline text-deepPurple/50">Email: </dt>
-                    <dd className="inline">{w.email}</dd>
-                  </div>
-                  <div>
-                    <dt className="inline text-deepPurple/50">Address: </dt>
-                    <dd className="inline">
-                      {w.street_address}, {w.zip_code}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="inline text-deepPurple/50">Won: </dt>
-                    <dd className="inline">{fmtFull(w.won_at)}</dd>
-                  </div>
-                  {w.picked_up && w.picked_up_at && (
-                    <div>
-                      <dt className="inline text-deepPurple/50">Picked up at </dt>
-                      <dd className="inline font-medium text-green-800">
-                        {fmtTime(w.picked_up_at)}
-                      </dd>
+                  {expanded && (
+                    <div className="px-5 pb-5 border-t border-deepPurple/10 pt-4">
+                      <dl className="text-base text-deepPurple/85 space-y-1.5 mb-4">
+                        <div>
+                          <dt className="inline text-deepPurple/50">Email: </dt>
+                          <dd className="inline break-all">{w.email}</dd>
+                        </div>
+                        <div>
+                          <dt className="inline text-deepPurple/50">Address: </dt>
+                          <dd className="inline">
+                            {w.street_address}, {w.zip_code}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt className="inline text-deepPurple/50">Prize: </dt>
+                          <dd className="inline font-medium">{w.prize}</dd>
+                        </div>
+                        <div>
+                          <dt className="inline text-deepPurple/50">Round: </dt>
+                          <dd className="inline">{w.round_number ?? "—"}</dd>
+                        </div>
+                        <div>
+                          <dt className="inline text-deepPurple/50">Won: </dt>
+                          <dd className="inline">{fmtFull(w.won_at)}</dd>
+                        </div>
+                        <div>
+                          <dt className="inline text-deepPurple/50">Status: </dt>
+                          <dd className="inline font-medium">
+                            {w.picked_up ? "Picked Up" : "Not Picked Up"}
+                          </dd>
+                        </div>
+                        {w.picked_up && w.picked_up_at && (
+                          <div>
+                            <dt className="inline text-deepPurple/50">
+                              Picked up at{" "}
+                            </dt>
+                            <dd className="inline font-medium text-green-800">
+                              {fmtTime(w.picked_up_at)}
+                            </dd>
+                          </div>
+                        )}
+                      </dl>
+
+                      {w.picked_up ? (
+                        <button
+                          onClick={() => setPickup(w.id, false)}
+                          disabled={busyId !== null || migrationNeeded}
+                          className="btn-ghost w-full py-3.5 text-sm"
+                        >
+                          {busyId === w.id ? "Saving…" : "Undo Pickup"}
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => setPickup(w.id, true)}
+                          disabled={busyId !== null || migrationNeeded}
+                          className="btn-primary w-full py-4 text-base"
+                        >
+                          {busyId === w.id ? "Saving…" : "Mark Picked Up"}
+                        </button>
+                      )}
                     </div>
                   )}
-                </dl>
-
-                {w.picked_up ? (
-                  <button
-                    onClick={() => setPickup(w.id, false)}
-                    disabled={busyId !== null || migrationNeeded}
-                    className="btn-ghost px-5 py-2 text-xs"
-                  >
-                    {busyId === w.id ? "Saving…" : "Undo Pickup"}
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => setPickup(w.id, true)}
-                    disabled={busyId !== null || migrationNeeded}
-                    className="btn-primary px-6 py-2.5 text-sm"
-                  >
-                    {busyId === w.id ? "Saving…" : "Mark Picked Up"}
-                  </button>
-                )}
-              </div>
-            ))}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
