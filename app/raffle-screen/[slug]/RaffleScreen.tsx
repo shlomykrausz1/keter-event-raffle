@@ -338,7 +338,9 @@ export default function RaffleScreen() {
           width={300}
           height={220}
           priority
-          className="w-[135px] xl:w-[200px] h-auto drop-shadow-[0_14px_22px_rgba(0,0,0,0.5)] mb-0"
+          className={`w-[135px] xl:w-[200px] h-auto mb-0 ${
+            giftWon || bookWon ? "logo-glow-winner" : "logo-glow"
+          }`}
         />
 
         <div className="w-full flex items-start justify-around px-10 xl:px-20 -mt-[36px] xl:-mt-[40px]">

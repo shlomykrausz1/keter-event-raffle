@@ -161,6 +161,52 @@ body {
   display: block;
 }
 
+/* ----- Raffle display logo: subtle premium glow ------------------
+   The logo stays perfectly still — only a soft warm-gold glow breathes
+   in and out every few seconds. No movement, rotation, or distortion.
+   The base depth shadow is baked into every keyframe so it is preserved.
+   A slightly stronger, faster (still tasteful) glow runs while a winner
+   is on screen. prefers-reduced-motion (below) disables both. */
+@keyframes logo-glow {
+  0%, 100% {
+    filter:
+      drop-shadow(0 14px 22px rgba(0, 0, 0, 0.5))
+      drop-shadow(0 0 0px rgba(212, 185, 136, 0))
+      brightness(1);
+  }
+  50% {
+    filter:
+      drop-shadow(0 14px 22px rgba(0, 0, 0, 0.5))
+      drop-shadow(0 0 20px rgba(212, 185, 136, 0.55))
+      brightness(1.05);
+  }
+}
+
+@keyframes logo-glow-winner {
+  0%, 100% {
+    filter:
+      drop-shadow(0 14px 22px rgba(0, 0, 0, 0.5))
+      drop-shadow(0 0 12px rgba(212, 185, 136, 0.5))
+      brightness(1.02);
+  }
+  50% {
+    filter:
+      drop-shadow(0 14px 22px rgba(0, 0, 0, 0.5))
+      drop-shadow(0 0 34px rgba(232, 200, 150, 0.9))
+      brightness(1.09);
+  }
+}
+
+.logo-glow {
+  animation: logo-glow 5s ease-in-out infinite;
+  will-change: filter;
+}
+
+.logo-glow-winner {
+  animation: logo-glow-winner 2.4s ease-in-out infinite;
+  will-change: filter;
+}
+
 /* Big screen styles */
 .screen-bg {
   background-image: url("/raffle-bg.jpg");
