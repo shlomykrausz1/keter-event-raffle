@@ -32,15 +32,6 @@ const FIELD_CLASS =
 const LABEL_CLASS =
   "mb-1 block text-[12px] font-semibold uppercase tracking-[0.07em] text-deepPurple/80";
 
-// Quick-fill domain chips for fast email entry on tablet (no browser autofill).
-const EMAIL_DOMAINS = [
-  "@gmail.com",
-  "@yahoo.com",
-  "@icloud.com",
-  "@hotmail.com",
-  "@outlook.com",
-];
-
 // Attributes shared by every text field to suppress browser/OS autofill and
 // password-manager suggestions. Critical on a shared public kiosk: one
 // person's saved name/email/address must never surface for the next person.
@@ -90,7 +81,6 @@ export default function EntryForm() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
-  const emailRef = useRef<HTMLInputElement>(null);
 
   useKeyboardAwareScroll();
 
@@ -114,18 +104,6 @@ export default function EntryForm() {
 
   const onZipChange = (raw: string) => {
     setField("zip_code", raw.replace(/[^\d-]/g, "").slice(0, 10));
-  };
-
-  // Tap a domain chip to complete the email: keep the part before "@" and
-  // append the chosen domain. No-op when the field is empty so nothing is
-  // submitted. Focus stays in the email field for fast tablet entry.
-  const applyEmailDomain = (domain: string) => {
-    setForm((prev) => {
-      const local = prev.email.trim().split("@")[0];
-      if (!local) return prev;
-      return { ...prev, email: `${local}${domain}` };
-    });
-    emailRef.current?.focus();
   };
 
   const validate = (): string | null => {
@@ -274,7 +252,6 @@ export default function EntryForm() {
                 Email Address
               </label>
               <input
-                ref={emailRef}
                 id="ke-email"
                 name="ke-email"
                 className={FIELD_CLASS}
@@ -288,21 +265,6 @@ export default function EntryForm() {
                 enterKeyHint="next"
                 {...NO_AUTOFILL}
               />
-              <div className="mt-1.5 flex flex-wrap gap-1.5">
-                {EMAIL_DOMAINS.map((domain) => (
-                  <button
-                    key={domain}
-                    type="button"
-                    // Prevent the tap from stealing focus from the email input so
-                    // the keyboard stays open and entry stays fast.
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => applyEmailDomain(domain)}
-                    className="rounded-full border border-deepPurple/20 bg-white px-3 py-1.5 text-[13px] font-semibold text-deepPurple/80 shadow-sm transition active:scale-95 active:bg-deepPurple/10 hover:bg-deepPurple/[0.06] focus:outline-none focus:ring-2 focus:ring-deepPurple/25"
-                  >
-                    {domain}
-                  </button>
-                ))}
-              </div>
             </div>
 
             <div>
