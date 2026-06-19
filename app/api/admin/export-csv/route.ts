@@ -85,6 +85,11 @@ export async function GET() {
     "winner",
     "prize",
     "raffle_round",
+    "Terms Accepted",
+    "Terms Accepted At",
+    "Terms Version",
+    "Marketing Email Consent",
+    "Marketing Consent Source",
   ];
 
   const lines = [header.join(",")];
@@ -102,6 +107,11 @@ export async function GET() {
       w ? "yes" : "no",
       w?.prize ?? "",
       w?.round_number ?? roundMap.get(e.id) ?? "",
+      e.terms_accepted ? "yes" : "no",
+      e.terms_accepted_at ?? "",
+      e.terms_version ?? "",
+      e.marketing_email_consent ? "yes" : "no",
+      e.marketing_consent_source ?? "",
     ];
     lines.push(row.map(csvEscape).join(","));
   }

@@ -19,6 +19,12 @@ create table if not exists entries (
   street_address    text not null,
   zip_code          text not null,
   is_demo           boolean not null default false,
+  -- Consent captured by the public entry form (see migration-terms-consent.sql)
+  terms_accepted            boolean not null default false,
+  terms_accepted_at         timestamptz,
+  terms_version             text,
+  marketing_email_consent   boolean not null default false,
+  marketing_consent_source  text,
   created_at        timestamptz not null default now()
 );
 

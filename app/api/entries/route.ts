@@ -5,12 +5,17 @@ import { normalizePhone, formatPhoneDisplay, isValid10Digit } from "@/lib/phone"
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
+// Version of the Terms & Conditions a submitter is agreeing to. Bump this
+// whenever the /terms copy changes so historical consent stays auditable.
+const TERMS_VERSION = "2026-06-18";
+
 type Body = {
   full_name?: string;
   phone?: string;
   email?: string;
   street_address?: string;
   zip_code?: string;
+  terms_accepted?: boolean;
 };
 
 export async function POST(req: Request) {
@@ -42,6 +47,12 @@ export async function POST(req: Request) {
   if (!/^\d{5}(-\d{4})?$/.test(zip_code)) {
     return NextResponse.json({ error: "Please enter a valid ZIP code." }, { status: 400 });
   }
+  if (body.terms_accepted !== true) {
+    return NextResponse.json(
+      { error: "You must agree to the Terms & Conditions to enter the raffle." },
+      { status: 400 }
+    );
+  }
 
   const phone_normalized = normalizePhone(phoneRaw);
   const phone_display = formatPhoneDisplay(phoneRaw);
@@ -63,22 +74,43 @@ export async function POST(req: Request) {
     );
   }
 
+  const baseRow = {
+    full_name,
+    phone_display,
+    phone_normalized,
+    email,
+    street_address,
+    zip_code,
+    is_demo: false,
+  };
+  const consentRow = {
+    terms_accepted: true,
+    terms_accepted_at: new Date().toISOString(),
+    terms_version: TERMS_VERSION,
+    marketing_email_consent: true,
+    marketing_consent_source: "raffle-entry-page",
+  };
+
+  const insertEntry = (includeConsent: boolean) =>
+    supa
+      .from("entries")
+      .insert(includeConsent ? { ...baseRow, ...consentRow } : baseRow)
+      .select("id")
+      .single();
+
   let data: { id: string } | null = null;
   let error: any = null;
   try {
-    const res = await supa
-      .from("entries")
-      .insert({
-        full_name,
-        phone_display,
-        phone_normalized,
-        email,
-        street_address,
-        zip_code,
-        is_demo: false,
-      })
-      .select("id")
-      .single();
+    let res = await insertEntry(true);
+    // 42703 = undefined_column. The consent columns are added by
+    // supabase/migration-terms-consent.sql; if that hasn't been run yet,
+    // fall back to a plain insert so the entry flow never breaks.
+    if (res.error && (res.error as any).code === "42703") {
+      console.warn(
+        "[entries] Consent columns missing — run supabase/migration-terms-consent.sql. Saving entry without consent fields for now."
+      );
+      res = await insertEntry(false);
+    }
     data = res.data as any;
     error = res.error;
   } catch (e: any) {

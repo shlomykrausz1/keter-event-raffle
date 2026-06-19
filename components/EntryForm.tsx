@@ -11,6 +11,7 @@ type FormState = {
   email: string;
   street_address: string;
   zip_code: string;
+  terms_accepted: boolean;
 };
 
 const EMPTY: FormState = {
@@ -19,6 +20,7 @@ const EMPTY: FormState = {
   email: "",
   street_address: "",
   zip_code: "",
+  terms_accepted: false,
 };
 
 export default function EntryForm() {
@@ -27,7 +29,7 @@ export default function EntryForm() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
-  const setField = useCallback(<K extends keyof FormState>(key: K, val: string) => {
+  const setField = useCallback(<K extends keyof FormState>(key: K, val: FormState[K]) => {
     setForm((prev) => ({ ...prev, [key]: val }));
   }, []);
 
@@ -45,6 +47,7 @@ export default function EntryForm() {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) return "Please enter a valid email.";
     if (!form.street_address.trim()) return "Please enter your street address.";
     if (!/^\d{5}(-\d{4})?$/.test(form.zip_code.trim())) return "Please enter a valid ZIP code.";
+    if (!form.terms_accepted) return "You must agree to the Terms & Conditions to enter the raffle.";
     return null;
   };
 
@@ -182,6 +185,27 @@ export default function EntryForm() {
             />
           </div>
         </div>
+
+        <label className="mt-3.5 flex items-start gap-2.5 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={form.terms_accepted}
+            onChange={(e) => setField("terms_accepted", e.target.checked)}
+            className="mt-[3px] h-[18px] w-[18px] shrink-0 cursor-pointer rounded-[5px] border border-deepPurple/30 accent-deepPurple focus:outline-none focus:ring-2 focus:ring-deepPurple/25"
+          />
+          <span className="text-deepPurple/75 text-[12.5px] leading-snug">
+            By entering the raffle, I agree to the{" "}
+            <a
+              href="/terms"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-medium text-deepPurple underline decoration-gold/70 underline-offset-2 transition-colors hover:text-eventRed"
+            >
+              Terms &amp; Conditions
+            </a>
+            .
+          </span>
+        </label>
 
         {error && (
           <p className="mt-3 text-center text-eventRed font-medium text-sm">{error}</p>

@@ -82,6 +82,11 @@ export async function GET() {
     { header: "Winner", key: "winner", width: 10 },
     { header: "Prize", key: "prize", width: 22 },
     { header: "Raffle Round", key: "raffle_round", width: 14 },
+    { header: "Terms Accepted", key: "terms_accepted", width: 14 },
+    { header: "Terms Accepted At", key: "terms_accepted_at", width: 22 },
+    { header: "Terms Version", key: "terms_version", width: 14 },
+    { header: "Marketing Email Consent", key: "marketing_email_consent", width: 22 },
+    { header: "Marketing Consent Source", key: "marketing_consent_source", width: 24 },
   ];
   ws.getRow(1).font = { bold: true, color: { argb: "FFFFF8EC" } };
   ws.getRow(1).fill = {
@@ -106,6 +111,11 @@ export async function GET() {
       winner: w ? "Yes" : "No",
       prize: w?.prize ?? "",
       raffle_round: w?.round_number ?? roundMap.get(e.id) ?? "",
+      terms_accepted: e.terms_accepted ? "Yes" : "No",
+      terms_accepted_at: e.terms_accepted_at ?? "",
+      terms_version: e.terms_version ?? "",
+      marketing_email_consent: e.marketing_email_consent ? "Yes" : "No",
+      marketing_consent_source: e.marketing_consent_source ?? "",
     });
   }
 
