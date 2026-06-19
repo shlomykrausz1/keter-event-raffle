@@ -9,28 +9,33 @@ export default function EnterPage() {
     <>
       <Background />
       {/*
-        Tablet-kiosk layout: top-aligned (not vertically centered) so the form
-        sits in the upper section and stays visible when the on-screen keyboard
-        opens. min-h-[100dvh] tracks the dynamic viewport on iPad Safari/Chrome,
-        and the generous safe-area bottom padding keeps the checkbox + submit
-        button reachable above the keyboard. Normal document flow lets the
-        browser scroll the focused field into view.
+        Tablet-kiosk layout. The page scrolls normally (no fixed/overflow-hidden
+        trap), starts high, and grows its bottom padding while the on-screen
+        keyboard is open. `--keyboard-inset` is published by the EntryForm
+        keyboard hook from window.visualViewport, so the checkbox + submit button
+        can always be scrolled above the keyboard on real Android/iOS tablets.
       */}
-      <main className="flex min-h-[100dvh] w-full flex-col items-center px-4 pt-[max(1.25rem,env(safe-area-inset-top))] pb-[max(3rem,env(safe-area-inset-bottom))] sm:pt-9">
-        <div className="mb-3 sm:mb-5">
+      <main
+        className="flex min-h-[100dvh] w-full flex-col items-center px-4 pt-4 sm:pt-6"
+        style={{
+          paddingBottom:
+            "calc(env(safe-area-inset-bottom, 0px) + 1.5rem + var(--keyboard-inset, 0px))",
+        }}
+      >
+        <div className="mb-2.5 sm:mb-3.5">
           <Image
             src="/keter-logo.png"
             alt="The Big Keter Event - Monsey"
             width={300}
             height={220}
             priority
-            className="w-24 sm:w-32 h-auto drop-shadow-[0_14px_22px_rgba(62,31,82,0.35)] animate-float"
+            className="w-20 sm:w-24 h-auto drop-shadow-[0_12px_20px_rgba(62,31,82,0.4)]"
           />
         </div>
 
         <EntryForm />
 
-        <p className="mt-4 text-deepPurple/55 text-[10px] uppercase tracking-[0.18em] text-center">
+        <p className="mt-3 text-deepPurple/55 text-[10px] uppercase tracking-[0.18em] text-center">
           The Big Keter Event &middot; Monsey
         </p>
       </main>

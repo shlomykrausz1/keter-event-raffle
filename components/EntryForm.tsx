@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Confetti from "./Confetti";
 import { formatPhoneDisplay, isValid10Digit } from "@/lib/phone";
@@ -23,14 +23,14 @@ const EMPTY: FormState = {
   terms_accepted: false,
 };
 
-// Comfortable, finger-friendly field styling for tablet kiosks. Kept as local
+// Solid, high-contrast field styling for a premium tablet kiosk. Kept as local
 // utility classes (not the shared .input-premium) so admin/login/staff pages
-// are unaffected. 17px text also keeps iOS Safari from zoom-on-focus.
+// stay untouched. 17px text also keeps mobile Safari/Chrome from zoom-on-focus.
 const FIELD_CLASS =
-  "w-full rounded-2xl border border-deepPurple/15 bg-white/70 px-5 py-3.5 text-[17px] leading-tight text-deepPurple shadow-sm transition placeholder:text-deepPurple/40 focus:border-deepPurple/50 focus:bg-white/95 focus:outline-none focus:ring-4 focus:ring-deepPurple/15";
+  "w-full rounded-xl border border-deepPurple/25 bg-white px-4 py-3 text-[17px] leading-tight text-deepPurple shadow-[0_1px_2px_rgba(62,31,82,0.06)] transition placeholder:text-deepPurple/35 focus:border-deepPurple focus:bg-white focus:outline-none focus:ring-4 focus:ring-deepPurple/15";
 
 const LABEL_CLASS =
-  "mb-1.5 block text-[12px] font-medium uppercase tracking-[0.09em] text-deepPurple/65";
+  "mb-1 block text-[12px] font-semibold uppercase tracking-[0.07em] text-deepPurple/80";
 
 // Quick-fill domain chips for fast email entry on tablet (no browser autofill).
 const EMAIL_DOMAINS = [
@@ -53,6 +53,37 @@ const NO_AUTOFILL = {
   "data-form-type": "other",
 } as const;
 
+/**
+ * Keyboard-aware behavior for tablet/mobile browsers.
+ *
+ * `100dvh` alone is not enough on real Android Chrome: the on-screen keyboard
+ * shrinks the *visual* viewport without changing the layout viewport, so the
+ * checkbox + submit button can end up trapped behind the keyboard. We listen to
+ * `window.visualViewport` and publish the keyboard height as a CSS variable
+ * (`--keyboard-inset`) on <html>, which the page wrapper turns into dynamic
+ * bottom padding so the lower form actions can always be scrolled into view.
+ */
+function useKeyboardAwareScroll() {
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const root = document.documentElement;
+    const update = () => {
+      // Height of the area covered by the keyboard (0 when it is closed).
+      const inset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+      root.style.setProperty("--keyboard-inset", `${Math.round(inset)}px`);
+    };
+    update();
+    vv.addEventListener("resize", update);
+    vv.addEventListener("scroll", update);
+    return () => {
+      vv.removeEventListener("resize", update);
+      vv.removeEventListener("scroll", update);
+      root.style.removeProperty("--keyboard-inset");
+    };
+  }, []);
+}
+
 export default function EntryForm() {
   const [form, setForm] = useState<FormState>(EMPTY);
   const [submitting, setSubmitting] = useState(false);
@@ -61,8 +92,20 @@ export default function EntryForm() {
   const formRef = useRef<HTMLFormElement>(null);
   const emailRef = useRef<HTMLInputElement>(null);
 
+  useKeyboardAwareScroll();
+
   const setField = useCallback(<K extends keyof FormState>(key: K, val: FormState[K]) => {
     setForm((prev) => ({ ...prev, [key]: val }));
+  }, []);
+
+  // When a field is focused, wait for the keyboard to animate in, then bring the
+  // field to the middle of the visible area so it (and the actions below it)
+  // stay reachable above the keyboard.
+  const handleFieldFocus = useCallback((e: React.FocusEvent<HTMLInputElement>) => {
+    const el = e.currentTarget;
+    window.setTimeout(() => {
+      el.scrollIntoView({ block: "center", behavior: "smooth" });
+    }, 300);
   }, []);
 
   const onPhoneChange = (raw: string) => {
@@ -148,6 +191,8 @@ export default function EntryForm() {
         setError(null);
         setSuccess(false);
         dismissKeyboard();
+        // Snap back to the top so the next person sees the full form.
+        window.scrollTo({ top: 0, behavior: "smooth" });
       }, 3000);
     } catch {
       setError(
@@ -169,166 +214,176 @@ export default function EntryForm() {
         }}
         autoComplete="off"
         noValidate
-        className="glass rounded-4xl px-6 py-6 sm:px-9 sm:py-8 w-full max-w-xl md:max-w-3xl mx-auto"
+        className="w-full max-w-lg mx-auto overflow-hidden rounded-[26px] border border-white/70 bg-ivory shadow-[0_28px_70px_-22px_rgba(62,31,82,0.62)] ring-1 ring-deepPurple/5"
       >
-        <div className="text-center mb-5 sm:mb-6">
-          <p className="text-deepPurple/60 uppercase tracking-[0.2em] text-[10px] sm:text-[11px] mb-1">
+        {/* Premium deep-purple header band */}
+        <div className="bg-gradient-to-br from-deepPurple via-deepPurple-mid to-deepPurple-light px-6 pt-5 pb-6 text-center">
+          <p className="text-gold-light uppercase tracking-[0.3em] text-[10px] sm:text-[11px] mb-1.5">
             Enter to win
           </p>
-          <h1 className="font-display text-deepPurple text-2xl sm:text-4xl leading-tight">
+          <h1 className="font-display text-ivory text-[2rem] sm:text-[2.4rem] leading-none drop-shadow-[0_2px_8px_rgba(0,0,0,0.25)]">
             ENTER THE RAFFLE
           </h1>
-          <div className="mt-2.5 mx-auto h-px w-20 bg-gradient-to-r from-transparent via-gold to-transparent" />
+          <div className="mt-3 mx-auto h-[2px] w-16 rounded-full bg-gradient-to-r from-transparent via-gold-light to-transparent" />
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-5 gap-y-4">
-          <div className="md:col-span-2">
-            <label htmlFor="ke-fullname" className={LABEL_CLASS}>
-              Full Name
-            </label>
-            <input
-              id="ke-fullname"
-              name="ke-fullname"
-              className={FIELD_CLASS}
-              value={form.full_name}
-              onChange={(e) => setField("full_name", e.target.value)}
-              placeholder="Yaakov Cohen"
-              inputMode="text"
-              autoCapitalize="words"
-              enterKeyHint="next"
-              autoFocus
-              {...NO_AUTOFILL}
-            />
-          </div>
+        {/* Form body */}
+        <div className="px-5 py-5 sm:px-7 sm:py-6">
+          <div className="space-y-3">
+            <div>
+              <label htmlFor="ke-fullname" className={LABEL_CLASS}>
+                Full Name
+              </label>
+              <input
+                id="ke-fullname"
+                name="ke-fullname"
+                className={FIELD_CLASS}
+                value={form.full_name}
+                onChange={(e) => setField("full_name", e.target.value)}
+                onFocus={handleFieldFocus}
+                placeholder="Yaakov Cohen"
+                inputMode="text"
+                autoCapitalize="words"
+                enterKeyHint="next"
+                {...NO_AUTOFILL}
+              />
+            </div>
 
-          <div>
-            <label htmlFor="ke-phone" className={LABEL_CLASS}>
-              Phone Number
-            </label>
-            <input
-              id="ke-phone"
-              name="ke-phone"
-              className={FIELD_CLASS}
-              value={form.phone}
-              onChange={(e) => onPhoneChange(e.target.value)}
-              placeholder="(718) 555-1234"
-              type="tel"
-              inputMode="tel"
-              autoCapitalize="off"
-              enterKeyHint="next"
-              {...NO_AUTOFILL}
-            />
-          </div>
+            <div>
+              <label htmlFor="ke-phone" className={LABEL_CLASS}>
+                Phone Number
+              </label>
+              <input
+                id="ke-phone"
+                name="ke-phone"
+                className={FIELD_CLASS}
+                value={form.phone}
+                onChange={(e) => onPhoneChange(e.target.value)}
+                onFocus={handleFieldFocus}
+                placeholder="(718) 555-1234"
+                type="tel"
+                inputMode="tel"
+                autoCapitalize="off"
+                enterKeyHint="next"
+                {...NO_AUTOFILL}
+              />
+            </div>
 
-          <div>
-            <label htmlFor="ke-email" className={LABEL_CLASS}>
-              Email Address
-            </label>
-            <input
-              ref={emailRef}
-              id="ke-email"
-              name="ke-email"
-              className={FIELD_CLASS}
-              value={form.email}
-              onChange={(e) => setField("email", e.target.value)}
-              placeholder="you@example.com"
-              type="email"
-              inputMode="email"
-              autoCapitalize="off"
-              enterKeyHint="next"
-              {...NO_AUTOFILL}
-            />
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {EMAIL_DOMAINS.map((domain) => (
-                <button
-                  key={domain}
-                  type="button"
-                  // Prevent the tap from stealing focus from the email input so
-                  // the keyboard stays open and entry stays fast.
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => applyEmailDomain(domain)}
-                  className="rounded-full border border-deepPurple/15 bg-white/55 px-3 py-1.5 text-[13px] font-medium text-deepPurple/75 transition active:scale-95 hover:bg-white/85 focus:outline-none focus:ring-2 focus:ring-deepPurple/20"
-                >
-                  {domain}
-                </button>
-              ))}
+            <div>
+              <label htmlFor="ke-email" className={LABEL_CLASS}>
+                Email Address
+              </label>
+              <input
+                ref={emailRef}
+                id="ke-email"
+                name="ke-email"
+                className={FIELD_CLASS}
+                value={form.email}
+                onChange={(e) => setField("email", e.target.value)}
+                onFocus={handleFieldFocus}
+                placeholder="you@example.com"
+                type="email"
+                inputMode="email"
+                autoCapitalize="off"
+                enterKeyHint="next"
+                {...NO_AUTOFILL}
+              />
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                {EMAIL_DOMAINS.map((domain) => (
+                  <button
+                    key={domain}
+                    type="button"
+                    // Prevent the tap from stealing focus from the email input so
+                    // the keyboard stays open and entry stays fast.
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => applyEmailDomain(domain)}
+                    className="rounded-full border border-deepPurple/20 bg-white px-3 py-1.5 text-[13px] font-semibold text-deepPurple/80 shadow-sm transition active:scale-95 active:bg-deepPurple/10 hover:bg-deepPurple/[0.06] focus:outline-none focus:ring-2 focus:ring-deepPurple/25"
+                  >
+                    {domain}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label htmlFor="ke-street" className={LABEL_CLASS}>
+                Street Address
+              </label>
+              <input
+                id="ke-street"
+                name="ke-street"
+                className={FIELD_CLASS}
+                value={form.street_address}
+                onChange={(e) => setField("street_address", e.target.value)}
+                onFocus={handleFieldFocus}
+                placeholder="123 Main Street"
+                inputMode="text"
+                autoCapitalize="words"
+                enterKeyHint="next"
+                {...NO_AUTOFILL}
+              />
+            </div>
+
+            <div>
+              <label htmlFor="ke-zip" className={LABEL_CLASS}>
+                ZIP Code
+              </label>
+              <input
+                id="ke-zip"
+                name="ke-zip"
+                className={FIELD_CLASS}
+                value={form.zip_code}
+                onChange={(e) => onZipChange(e.target.value)}
+                onFocus={handleFieldFocus}
+                placeholder="10952"
+                inputMode="numeric"
+                autoCapitalize="off"
+                enterKeyHint="done"
+                maxLength={10}
+                {...NO_AUTOFILL}
+              />
             </div>
           </div>
 
-          <div className="md:col-span-2">
-            <label htmlFor="ke-street" className={LABEL_CLASS}>
-              Street Address
-            </label>
+          <label className="mt-4 flex items-start gap-3 rounded-xl border border-deepPurple/10 bg-deepPurple/[0.04] px-3.5 py-3 cursor-pointer select-none">
             <input
-              id="ke-street"
-              name="ke-street"
-              className={FIELD_CLASS}
-              value={form.street_address}
-              onChange={(e) => setField("street_address", e.target.value)}
-              placeholder="123 Main Street"
-              inputMode="text"
-              autoCapitalize="words"
-              enterKeyHint="next"
-              {...NO_AUTOFILL}
+              type="checkbox"
+              checked={form.terms_accepted}
+              onChange={(e) => setField("terms_accepted", e.target.checked)}
+              className="mt-[1px] h-[22px] w-[22px] shrink-0 cursor-pointer rounded-[6px] border border-deepPurple/35 accent-deepPurple focus:outline-none focus:ring-2 focus:ring-deepPurple/25"
             />
-          </div>
+            <span className="text-deepPurple/85 text-[13px] font-medium leading-snug">
+              By entering the raffle, I agree to the{" "}
+              <a
+                href="/terms"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-semibold text-deepPurple underline decoration-gold underline-offset-2 transition-colors hover:text-eventRed"
+              >
+                Terms &amp; Conditions
+              </a>
+              .
+            </span>
+          </label>
 
-          <div>
-            <label htmlFor="ke-zip" className={LABEL_CLASS}>
-              ZIP Code
-            </label>
-            <input
-              id="ke-zip"
-              name="ke-zip"
-              className={FIELD_CLASS}
-              value={form.zip_code}
-              onChange={(e) => onZipChange(e.target.value)}
-              placeholder="10952"
-              inputMode="numeric"
-              autoCapitalize="off"
-              enterKeyHint="done"
-              maxLength={10}
-              {...NO_AUTOFILL}
-            />
-          </div>
+          {error && (
+            <p className="mt-3 text-center text-eventRed font-semibold text-sm sm:text-base">
+              {error}
+            </p>
+          )}
+
+          <button
+            type="submit"
+            disabled={submitting}
+            className="btn-primary w-full mt-4 py-4 text-lg tracking-[0.18em] shadow-[0_16px_34px_-12px_rgba(62,31,82,0.75)]"
+          >
+            {submitting ? "Entering…" : "Enter Raffle"}
+          </button>
+
+          <p className="mt-3 text-center text-deepPurple/50 text-[10px] sm:text-[11px] uppercase tracking-[0.18em]">
+            One entry per phone number
+          </p>
         </div>
-
-        <label className="mt-5 flex items-start gap-3 cursor-pointer select-none">
-          <input
-            type="checkbox"
-            checked={form.terms_accepted}
-            onChange={(e) => setField("terms_accepted", e.target.checked)}
-            className="mt-[2px] h-6 w-6 shrink-0 cursor-pointer rounded-[6px] border border-deepPurple/30 accent-deepPurple focus:outline-none focus:ring-2 focus:ring-deepPurple/25"
-          />
-          <span className="text-deepPurple/75 text-sm leading-snug">
-            By entering the raffle, I agree to the{" "}
-            <a
-              href="/terms"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="font-medium text-deepPurple underline decoration-gold/70 underline-offset-2 transition-colors hover:text-eventRed"
-            >
-              Terms &amp; Conditions
-            </a>
-            .
-          </span>
-        </label>
-
-        {error && (
-          <p className="mt-4 text-center text-eventRed font-medium text-sm sm:text-base">{error}</p>
-        )}
-
-        <button
-          type="submit"
-          disabled={submitting}
-          className="btn-primary w-full mt-5 py-4 text-lg tracking-[0.15em]"
-        >
-          {submitting ? "Entering…" : "Enter Raffle"}
-        </button>
-
-        <p className="mt-3 text-center text-deepPurple/55 text-[10px] sm:text-[11px] uppercase tracking-[0.18em]">
-          One entry per phone number
-        </p>
       </form>
 
       <AnimatePresence>
