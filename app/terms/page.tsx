@@ -60,11 +60,6 @@ export default function TermsPage() {
             </p>
 
             <p>Void where prohibited by law.</p>
-
-            <p>
-              For quest opt out, contact Keter Judaica at: [insert email/contact
-              info].
-            </p>
           </div>
 
           <div className="mt-8 text-center">
