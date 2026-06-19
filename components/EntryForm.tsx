@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Confetti from "./Confetti";
 import { formatPhoneDisplay, isValid10Digit } from "@/lib/phone";
@@ -23,11 +23,43 @@ const EMPTY: FormState = {
   terms_accepted: false,
 };
 
+// Comfortable, finger-friendly field styling for tablet kiosks. Kept as local
+// utility classes (not the shared .input-premium) so admin/login/staff pages
+// are unaffected. 17px text also keeps iOS Safari from zoom-on-focus.
+const FIELD_CLASS =
+  "w-full rounded-2xl border border-deepPurple/15 bg-white/70 px-5 py-3.5 text-[17px] leading-tight text-deepPurple shadow-sm transition placeholder:text-deepPurple/40 focus:border-deepPurple/50 focus:bg-white/95 focus:outline-none focus:ring-4 focus:ring-deepPurple/15";
+
+const LABEL_CLASS =
+  "mb-1.5 block text-[12px] font-medium uppercase tracking-[0.09em] text-deepPurple/65";
+
+// Quick-fill domain chips for fast email entry on tablet (no browser autofill).
+const EMAIL_DOMAINS = [
+  "@gmail.com",
+  "@yahoo.com",
+  "@icloud.com",
+  "@hotmail.com",
+  "@outlook.com",
+];
+
+// Attributes shared by every text field to suppress browser/OS autofill and
+// password-manager suggestions. Critical on a shared public kiosk: one
+// person's saved name/email/address must never surface for the next person.
+const NO_AUTOFILL = {
+  autoComplete: "off",
+  autoCorrect: "off",
+  spellCheck: false,
+  "data-1p-ignore": true,
+  "data-lpignore": "true",
+  "data-form-type": "other",
+} as const;
+
 export default function EntryForm() {
   const [form, setForm] = useState<FormState>(EMPTY);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
+  const emailRef = useRef<HTMLInputElement>(null);
 
   const setField = useCallback(<K extends keyof FormState>(key: K, val: FormState[K]) => {
     setForm((prev) => ({ ...prev, [key]: val }));
@@ -41,6 +73,18 @@ export default function EntryForm() {
     setField("zip_code", raw.replace(/[^\d-]/g, "").slice(0, 10));
   };
 
+  // Tap a domain chip to complete the email: keep the part before "@" and
+  // append the chosen domain. No-op when the field is empty so nothing is
+  // submitted. Focus stays in the email field for fast tablet entry.
+  const applyEmailDomain = (domain: string) => {
+    setForm((prev) => {
+      const local = prev.email.trim().split("@")[0];
+      if (!local) return prev;
+      return { ...prev, email: `${local}${domain}` };
+    });
+    emailRef.current?.focus();
+  };
+
   const validate = (): string | null => {
     if (!form.full_name.trim()) return "Please enter your full name.";
     if (!isValid10Digit(form.phone)) return "Please enter a valid 10-digit phone number.";
@@ -49,6 +93,13 @@ export default function EntryForm() {
     if (!/^\d{5}(-\d{4})?$/.test(form.zip_code.trim())) return "Please enter a valid ZIP code.";
     if (!form.terms_accepted) return "You must agree to the Terms & Conditions to enter the raffle.";
     return null;
+  };
+
+  // Drop focus so the on-screen keyboard closes and no field stays "active"
+  // for the next person at the kiosk.
+  const dismissKeyboard = () => {
+    const el = document.activeElement as HTMLElement | null;
+    el?.blur?.();
   };
 
   const submit = async () => {
@@ -88,11 +139,15 @@ export default function EntryForm() {
       }
       setSuccess(true);
       setSubmitting(false);
+      // Close the keyboard immediately so the confirmation is fully visible.
+      dismissKeyboard();
 
-      // Auto-reset after 3 seconds
+      // Fully reset for the next person after the confirmation shows.
       setTimeout(() => {
         setForm(EMPTY);
+        setError(null);
         setSuccess(false);
+        dismissKeyboard();
       }, 3000);
     } catch {
       setError(
@@ -107,93 +162,145 @@ export default function EntryForm() {
       <Confetti fire={success} />
 
       <form
+        ref={formRef}
         onSubmit={(e) => {
           e.preventDefault();
           submit();
         }}
-        className="glass rounded-4xl px-6 py-5 sm:px-8 sm:py-6 w-full max-w-2xl mx-auto"
+        autoComplete="off"
+        noValidate
+        className="glass rounded-4xl px-6 py-6 sm:px-9 sm:py-8 w-full max-w-xl md:max-w-3xl mx-auto"
       >
-        <div className="text-center mb-4">
-          <p className="text-deepPurple/60 uppercase tracking-[0.2em] text-[10px] mb-1">
+        <div className="text-center mb-5 sm:mb-6">
+          <p className="text-deepPurple/60 uppercase tracking-[0.2em] text-[10px] sm:text-[11px] mb-1">
             Enter to win
           </p>
-          <h1 className="font-display text-deepPurple text-2xl sm:text-3xl leading-tight">
+          <h1 className="font-display text-deepPurple text-2xl sm:text-4xl leading-tight">
             ENTER THE RAFFLE
           </h1>
-          <div className="mt-2 mx-auto h-px w-16 bg-gradient-to-r from-transparent via-gold to-transparent" />
+          <div className="mt-2.5 mx-auto h-px w-20 bg-gradient-to-r from-transparent via-gold to-transparent" />
         </div>
 
-        <div className="space-y-2.5">
-          <div>
-            <label className="label-premium">Full Name</label>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-5 gap-y-4">
+          <div className="md:col-span-2">
+            <label htmlFor="ke-fullname" className={LABEL_CLASS}>
+              Full Name
+            </label>
             <input
-              className="input-premium"
+              id="ke-fullname"
+              name="ke-fullname"
+              className={FIELD_CLASS}
               value={form.full_name}
               onChange={(e) => setField("full_name", e.target.value)}
               placeholder="Yaakov Cohen"
-              autoComplete="name"
+              inputMode="text"
+              autoCapitalize="words"
+              enterKeyHint="next"
               autoFocus
+              {...NO_AUTOFILL}
             />
           </div>
 
           <div>
-            <label className="label-premium">Phone Number</label>
+            <label htmlFor="ke-phone" className={LABEL_CLASS}>
+              Phone Number
+            </label>
             <input
-              className="input-premium"
+              id="ke-phone"
+              name="ke-phone"
+              className={FIELD_CLASS}
               value={form.phone}
               onChange={(e) => onPhoneChange(e.target.value)}
               placeholder="(718) 555-1234"
+              type="tel"
               inputMode="tel"
-              autoComplete="tel-national"
+              autoCapitalize="off"
+              enterKeyHint="next"
+              {...NO_AUTOFILL}
             />
           </div>
 
           <div>
-            <label className="label-premium">Email Address</label>
+            <label htmlFor="ke-email" className={LABEL_CLASS}>
+              Email Address
+            </label>
             <input
-              className="input-premium"
+              ref={emailRef}
+              id="ke-email"
+              name="ke-email"
+              className={FIELD_CLASS}
               value={form.email}
               onChange={(e) => setField("email", e.target.value)}
               placeholder="you@example.com"
               type="email"
               inputMode="email"
-              autoComplete="email"
+              autoCapitalize="off"
+              enterKeyHint="next"
+              {...NO_AUTOFILL}
             />
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {EMAIL_DOMAINS.map((domain) => (
+                <button
+                  key={domain}
+                  type="button"
+                  // Prevent the tap from stealing focus from the email input so
+                  // the keyboard stays open and entry stays fast.
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => applyEmailDomain(domain)}
+                  className="rounded-full border border-deepPurple/15 bg-white/55 px-3 py-1.5 text-[13px] font-medium text-deepPurple/75 transition active:scale-95 hover:bg-white/85 focus:outline-none focus:ring-2 focus:ring-deepPurple/20"
+                >
+                  {domain}
+                </button>
+              ))}
+            </div>
           </div>
 
-          <div>
-            <label className="label-premium">Street Address</label>
+          <div className="md:col-span-2">
+            <label htmlFor="ke-street" className={LABEL_CLASS}>
+              Street Address
+            </label>
             <input
-              className="input-premium"
+              id="ke-street"
+              name="ke-street"
+              className={FIELD_CLASS}
               value={form.street_address}
               onChange={(e) => setField("street_address", e.target.value)}
               placeholder="123 Main Street"
-              autoComplete="street-address"
+              inputMode="text"
+              autoCapitalize="words"
+              enterKeyHint="next"
+              {...NO_AUTOFILL}
             />
           </div>
 
           <div>
-            <label className="label-premium">ZIP Code</label>
+            <label htmlFor="ke-zip" className={LABEL_CLASS}>
+              ZIP Code
+            </label>
             <input
-              className="input-premium"
+              id="ke-zip"
+              name="ke-zip"
+              className={FIELD_CLASS}
               value={form.zip_code}
               onChange={(e) => onZipChange(e.target.value)}
               placeholder="10952"
               inputMode="numeric"
-              autoComplete="postal-code"
+              autoCapitalize="off"
+              enterKeyHint="done"
               maxLength={10}
+              {...NO_AUTOFILL}
             />
           </div>
         </div>
 
-        <label className="mt-3.5 flex items-start gap-2.5 cursor-pointer select-none">
+        <label className="mt-5 flex items-start gap-3 cursor-pointer select-none">
           <input
             type="checkbox"
             checked={form.terms_accepted}
             onChange={(e) => setField("terms_accepted", e.target.checked)}
-            className="mt-[3px] h-[18px] w-[18px] shrink-0 cursor-pointer rounded-[5px] border border-deepPurple/30 accent-deepPurple focus:outline-none focus:ring-2 focus:ring-deepPurple/25"
+            className="mt-[2px] h-6 w-6 shrink-0 cursor-pointer rounded-[6px] border border-deepPurple/30 accent-deepPurple focus:outline-none focus:ring-2 focus:ring-deepPurple/25"
           />
-          <span className="text-deepPurple/75 text-[12.5px] leading-snug">
+          <span className="text-deepPurple/75 text-sm leading-snug">
             By entering the raffle, I agree to the{" "}
             <a
               href="/terms"
@@ -208,18 +315,18 @@ export default function EntryForm() {
         </label>
 
         {error && (
-          <p className="mt-3 text-center text-eventRed font-medium text-sm">{error}</p>
+          <p className="mt-4 text-center text-eventRed font-medium text-sm sm:text-base">{error}</p>
         )}
 
         <button
           type="submit"
           disabled={submitting}
-          className="btn-primary w-full mt-4 py-3 text-base tracking-[0.15em]"
+          className="btn-primary w-full mt-5 py-4 text-lg tracking-[0.15em]"
         >
           {submitting ? "Entering…" : "Enter Raffle"}
         </button>
 
-        <p className="mt-2 text-center text-deepPurple/55 text-[10px] uppercase tracking-[0.18em]">
+        <p className="mt-3 text-center text-deepPurple/55 text-[10px] sm:text-[11px] uppercase tracking-[0.18em]">
           One entry per phone number
         </p>
       </form>
