@@ -80,11 +80,10 @@ export default function RaffleScreen() {
   const [pool, setPool] = useState<Pool | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [spinning, setSpinning] = useState<WheelKey | null>(null);
-  const [isFullscreen, setIsFullscreen] = useState(false);
 
   // Press F to toggle true browser fullscreen (no Chrome bar / tabs). Only F
   // toggles it — every other key is ignored. The browser exits fullscreen on
-  // Escape by itself; the fullscreenchange listener keeps our state in sync.
+  // Escape by itself.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== "f" && e.key !== "F") return;
@@ -96,15 +95,9 @@ export default function RaffleScreen() {
         document.documentElement.requestFullscreen().catch(() => {});
       }
     };
-    const onFullscreenChange = () => {
-      setIsFullscreen(document.fullscreenElement != null);
-    };
     window.addEventListener("keydown", onKeyDown);
-    document.addEventListener("fullscreenchange", onFullscreenChange);
-    onFullscreenChange();
     return () => {
       window.removeEventListener("keydown", onKeyDown);
-      document.removeEventListener("fullscreenchange", onFullscreenChange);
     };
   }, []);
 
@@ -331,21 +324,6 @@ export default function RaffleScreen() {
 
   return (
     <div className="screen-bg fixed inset-0 overflow-hidden">
-      {/* Round info pill — corner element, doesn't affect layout */}
-      {pool && hasPool && (
-        <div className="absolute top-6 left-6 xl:top-8 xl:left-10 z-10">
-          <div className="glass rounded-full px-5 py-2.5 text-deepPurple">
-            <span className="font-display tracking-[0.18em] text-xs xl:text-sm uppercase opacity-70">
-              Round {pool.round_number}
-            </span>
-            <span className="mx-3 opacity-30">|</span>
-            <span className="font-display tracking-[0.1em] text-sm xl:text-base">
-              {pool.remaining} eligible
-            </span>
-          </div>
-        </div>
-      )}
-
       {/*
         MAIN STAGE — top 2/3 of the screen.
         Contains the logo + both wheels (titles, circles, buttons, popups).
@@ -398,15 +376,6 @@ export default function RaffleScreen() {
             <p className="text-deepPurple/70 text-xl">
               {error || "The host hasn't started a raffle round yet."}
             </p>
-          </div>
-        </div>
-      )}
-
-      {/* Fullscreen hint — hidden once F is pressed and fullscreen is active */}
-      {!isFullscreen && (
-        <div className="absolute bottom-5 right-6 z-30 pointer-events-none">
-          <div className="glass rounded-full px-4 py-2 text-deepPurple/70 font-display tracking-[0.18em] text-xs uppercase">
-            Press F to enter fullscreen
           </div>
         </div>
       )}
