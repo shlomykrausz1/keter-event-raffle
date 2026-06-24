@@ -338,33 +338,46 @@ export default function RaffleScreen() {
           width={300}
           height={220}
           priority
+          // Nudge the logo down ~35px on the 1920x1080 LED wall (layout only).
+          style={{ transform: "translateY(35px)" }}
           className={`w-[135px] xl:w-[200px] h-auto mb-0 ${
             giftWon || bookWon ? "logo-glow-winner" : "logo-glow"
           }`}
         />
 
         <div className="w-full flex items-start justify-around px-10 xl:px-20 -mt-[36px] xl:-mt-[40px]">
-          <Wheel
-            prizeTitle="$100 GIFT CARD"
-            segments={wheels.gift.segments}
-            winnerIndex={wheels.gift.winnerIndex}
-            spinning={spinning === "gift"}
-            disabled={!canDraw || giftWon || spinning !== null}
-            winnerOverlay={overlays.gift}
-            onSpinClick={() => requestDraw("gift")}
-            onSpinComplete={() => completeSpin("gift")}
-          />
+          {/*
+            Each wheel group (title + arrow + wheel + winner popup + spin button)
+            is moved as one unit via a transform on its wrapper. Transforms don't
+            affect layout flow, so this is positioning only — nothing inside the
+            Wheel changes. Values target the 1920x1080 LED wall: both wheels drop
+            45px and pull 45px toward center.
+          */}
+          <div style={{ transform: "translate(45px, 45px)" }}>
+            <Wheel
+              prizeTitle="$100 GIFT CARD"
+              segments={wheels.gift.segments}
+              winnerIndex={wheels.gift.winnerIndex}
+              spinning={spinning === "gift"}
+              disabled={!canDraw || giftWon || spinning !== null}
+              winnerOverlay={overlays.gift}
+              onSpinClick={() => requestDraw("gift")}
+              onSpinComplete={() => completeSpin("gift")}
+            />
+          </div>
 
-          <Wheel
-            prizeTitle="ANY BOOK IN STORE"
-            segments={wheels.book.segments}
-            winnerIndex={wheels.book.winnerIndex}
-            spinning={spinning === "book"}
-            disabled={!canDraw || bookWon || spinning !== null}
-            winnerOverlay={overlays.book}
-            onSpinClick={() => requestDraw("book")}
-            onSpinComplete={() => completeSpin("book")}
-          />
+          <div style={{ transform: "translate(-45px, 45px)" }}>
+            <Wheel
+              prizeTitle="ANY BOOK IN STORE"
+              segments={wheels.book.segments}
+              winnerIndex={wheels.book.winnerIndex}
+              spinning={spinning === "book"}
+              disabled={!canDraw || bookWon || spinning !== null}
+              winnerOverlay={overlays.book}
+              onSpinClick={() => requestDraw("book")}
+              onSpinComplete={() => completeSpin("book")}
+            />
+          </div>
         </div>
       </div>
 
