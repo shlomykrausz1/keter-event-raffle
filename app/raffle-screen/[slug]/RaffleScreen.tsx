@@ -351,9 +351,9 @@ export default function RaffleScreen() {
             is moved as one unit via a transform on its wrapper. Transforms don't
             affect layout flow, so this is positioning only — nothing inside the
             Wheel changes. Values target the 1920x1080 LED wall: both wheels drop
-            85px and pull 45px toward center.
+            115px and pull 45px toward center.
           */}
-          <div style={{ transform: "translate(45px, 85px)" }}>
+          <div style={{ transform: "translate(45px, 115px)" }}>
             <Wheel
               prizeTitle="$100 GIFT CARD"
               segments={wheels.gift.segments}
@@ -366,7 +366,7 @@ export default function RaffleScreen() {
             />
           </div>
 
-          <div style={{ transform: "translate(-45px, 85px)" }}>
+          <div style={{ transform: "translate(-45px, 115px)" }}>
             <Wheel
               prizeTitle="ANY BOOK IN STORE"
               segments={wheels.book.segments}
