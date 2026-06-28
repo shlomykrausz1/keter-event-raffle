@@ -27,10 +27,10 @@ const EMPTY: FormState = {
 // utility classes (not the shared .input-premium) so admin/login/staff pages
 // stay untouched. 17px text also keeps mobile Safari/Chrome from zoom-on-focus.
 const FIELD_CLASS =
-  "w-full rounded-xl border border-deepPurple/25 bg-white px-4 py-3 text-[17px] leading-tight text-deepPurple shadow-[0_1px_2px_rgba(62,31,82,0.06)] transition placeholder:text-deepPurple/35 focus:border-deepPurple focus:bg-white focus:outline-none focus:ring-4 focus:ring-deepPurple/15";
+  "w-full rounded-xl tablet:rounded-2xl border border-deepPurple/25 bg-white px-4 py-3 tablet:px-5 text-[17px] tablet:text-[20px] leading-tight text-deepPurple shadow-[0_1px_2px_rgba(62,31,82,0.06)] transition placeholder:text-deepPurple/35 focus:border-deepPurple focus:bg-white focus:outline-none focus:ring-4 focus:ring-deepPurple/15";
 
 const LABEL_CLASS =
-  "mb-1 block text-[12px] font-semibold uppercase tracking-[0.07em] text-deepPurple/80";
+  "mb-1 tablet:mb-1.5 block text-[12px] tablet:text-[15px] font-semibold uppercase tracking-[0.07em] text-deepPurple/80";
 
 // Attributes shared by every text field to suppress browser/OS autofill and
 // password-manager suggestions. Critical on a shared public kiosk: one
@@ -192,21 +192,21 @@ export default function EntryForm() {
         }}
         autoComplete="off"
         noValidate
-        className="w-full max-w-lg mx-auto overflow-hidden rounded-[26px] border border-white/70 bg-ivory shadow-[0_28px_70px_-22px_rgba(62,31,82,0.62)] ring-1 ring-deepPurple/5"
+        className="w-full max-w-lg tablet:max-w-none mx-auto overflow-hidden rounded-[26px] tablet:rounded-[32px] border border-white/70 bg-ivory shadow-[0_28px_70px_-22px_rgba(62,31,82,0.62)] ring-1 ring-deepPurple/5"
       >
         {/* Premium deep-purple header band */}
-        <div className="bg-gradient-to-br from-deepPurple via-deepPurple-mid to-deepPurple-light px-6 pt-5 pb-6 text-center">
-          <p className="text-gold-light uppercase tracking-[0.3em] text-[10px] sm:text-[11px] mb-1.5">
+        <div className="bg-gradient-to-br from-deepPurple via-deepPurple-mid to-deepPurple-light px-6 pt-5 pb-6 tablet:px-10 tablet:pt-6 tablet:pb-6 text-center">
+          <p className="text-gold-light uppercase tracking-[0.3em] tablet:tracking-[0.34em] text-[10px] sm:text-[11px] tablet:text-[13px] mb-1.5 tablet:mb-2">
             Enter to win
           </p>
-          <h1 className="font-display text-ivory text-[2rem] sm:text-[2.4rem] leading-none drop-shadow-[0_2px_8px_rgba(0,0,0,0.25)]">
+          <h1 className="font-display text-ivory text-[2rem] sm:text-[2.4rem] tablet:text-[3.1rem] leading-none drop-shadow-[0_2px_8px_rgba(0,0,0,0.25)]">
             ENTER THE RAFFLE
           </h1>
-          <div className="mt-3 mx-auto h-[2px] w-16 rounded-full bg-gradient-to-r from-transparent via-gold-light to-transparent" />
+          <div className="mt-3 tablet:mt-4 mx-auto h-[2px] tablet:h-[3px] w-16 tablet:w-24 rounded-full bg-gradient-to-r from-transparent via-gold-light to-transparent" />
         </div>
 
         {/* Form body */}
-        <div className="px-5 py-5 sm:px-7 sm:py-6">
+        <div className="px-5 py-5 sm:px-7 sm:py-6 tablet:px-10 tablet:py-6">
           <div className="space-y-3">
             <div>
               <label htmlFor="ke-fullname" className={LABEL_CLASS}>
@@ -307,14 +307,14 @@ export default function EntryForm() {
             </div>
           </div>
 
-          <label className="mt-4 flex items-start gap-3 rounded-xl border border-deepPurple/10 bg-deepPurple/[0.04] px-3.5 py-3 cursor-pointer select-none">
+          <label className="mt-4 flex items-start gap-3 tablet:gap-4 rounded-xl tablet:rounded-2xl border border-deepPurple/10 bg-deepPurple/[0.04] px-3.5 py-3 tablet:px-5 tablet:py-3.5 cursor-pointer select-none">
             <input
               type="checkbox"
               checked={form.terms_accepted}
               onChange={(e) => setField("terms_accepted", e.target.checked)}
-              className="mt-[1px] h-[22px] w-[22px] shrink-0 cursor-pointer rounded-[6px] border border-deepPurple/35 accent-deepPurple focus:outline-none focus:ring-2 focus:ring-deepPurple/25"
+              className="mt-[1px] h-[22px] w-[22px] tablet:h-[30px] tablet:w-[30px] shrink-0 cursor-pointer rounded-[6px] tablet:rounded-[8px] border border-deepPurple/35 accent-deepPurple focus:outline-none focus:ring-2 focus:ring-deepPurple/25"
             />
-            <span className="text-deepPurple/85 text-[13px] font-medium leading-snug">
+            <span className="text-deepPurple/85 text-[13px] tablet:text-[16px] font-medium leading-snug">
               By entering the raffle, I agree to the{" "}
               <a
                 href="/terms"
@@ -329,7 +329,7 @@ export default function EntryForm() {
           </label>
 
           {error && (
-            <p className="mt-3 text-center text-eventRed font-semibold text-sm sm:text-base">
+            <p className="mt-3 text-center text-eventRed font-semibold text-sm sm:text-base tablet:text-lg">
               {error}
             </p>
           )}
@@ -337,12 +337,12 @@ export default function EntryForm() {
           <button
             type="submit"
             disabled={submitting}
-            className="btn-primary w-full mt-4 py-4 text-lg tracking-[0.18em] shadow-[0_16px_34px_-12px_rgba(62,31,82,0.75)]"
+            className="btn-primary w-full mt-4 tablet:mt-5 py-4 tablet:py-4 text-lg tablet:text-2xl tracking-[0.18em] shadow-[0_16px_34px_-12px_rgba(62,31,82,0.75)]"
           >
             {submitting ? "Entering…" : "Enter Raffle"}
           </button>
 
-          <p className="mt-3 text-center text-deepPurple/50 text-[10px] sm:text-[11px] uppercase tracking-[0.18em]">
+          <p className="mt-3 tablet:mt-4 text-center text-deepPurple/50 text-[10px] sm:text-[11px] tablet:text-[13px] uppercase tracking-[0.18em]">
             One entry per phone number
           </p>
         </div>

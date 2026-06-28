@@ -4,6 +4,14 @@ const config: Config = {
   content: ["./app/**/*.{ts,tsx}", "./components/**/*.{ts,tsx}"],
   theme: {
     extend: {
+      // Tablet-portrait kiosk breakpoint. Additive: leaves sm/md/lg/xl intact.
+      // Scoped to portrait orientation in the tablet width band so the desktop
+      // raffle screen and phone layout are never affected.
+      screens: {
+        tablet: {
+          raw: "(min-width: 560px) and (max-width: 1200px) and (orientation: portrait)",
+        },
+      },
       colors: {
         // Event palette - matches the dreamy mountain mockup
         sky: "#F8D9C4",        // warm peach sky
